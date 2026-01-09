@@ -1,0 +1,47 @@
+{
+  "name": "omnifocus-mcp-cli",
+  "version": "1.0.0",
+  "description": "Command-line interface for OmniFocus 4 on macOS",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": {
+    "of": "./bin/of.js"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:phase": "node --test --test-name-pattern",
+    "test:watch": "node --test --watch test/*.test.js",
+    "test:only": "node --test --test-only test/*.test.js",
+    "lint": "eslint src/",
+    "completions:bash": "node bin/of.js completion bash",
+    "completions:zsh": "node bin/of.js completion zsh",
+    "mcp": "node bin/of.js mcp run"
+  },
+  "keywords": [
+    "omnifocus",
+    "macos",
+    "cli",
+    "jxa",
+    "automation",
+    "gtd",
+    "productivity"
+  ],
+  "author": "",
+  "license": "MIT",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "os": [
+    "darwin"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.25.2",
+    "commander": "^12.1.0",
+    "zod": "^4.3.5"
+  },
+  "files": [
+    "bin/",
+    "src/",
+    "jxa/"
+  ]
+}
