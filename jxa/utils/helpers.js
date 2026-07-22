@@ -346,7 +346,14 @@ function formatTag(tag) {
  * Find project by name or ID
  */
 function findProject(doc, nameOrId) {
-  // Try by ID first
+  // ID takes precedence over name, matching the original two-pass order.
+  const byId = firstWhere(doc.flattenedProjects, { id: nameOrId });
+  if (byId) return byId;
+
+  const byName = firstWhere(doc.flattenedProjects, { name: nameOrId });
+  if (byName) return byName;
+
+  // Fallback: the original scans, if whose() cannot serve these queries.
   try {
     const projects = doc.flattenedProjects();
     for (let i = 0; i < projects.length; i++) {
@@ -356,7 +363,6 @@ function findProject(doc, nameOrId) {
     }
   } catch {}
 
-  // Try by name
   try {
     const projects = doc.flattenedProjects();
     for (let i = 0; i < projects.length; i++) {
@@ -373,6 +379,18 @@ function findProject(doc, nameOrId) {
  * Find tag by name or ID
  */
 function findTag(doc, nameOrId) {
+  // NOTE: the original matched id-or-name in ONE pass, so whichever came first
+  // in collection order won. This checks id across all tags before name, so an
+  // id match now beats an earlier name match. That only differs if a tag's NAME
+  // equals a different tag's ID — OmniFocus IDs are opaque strings, so this is
+  // a theoretical difference, but it is a difference.
+  const byId = firstWhere(doc.flattenedTags, { id: nameOrId });
+  if (byId) return byId;
+
+  const byName = firstWhere(doc.flattenedTags, { name: nameOrId });
+  if (byName) return byName;
+
+  // Fallback: the original single-pass scan.
   try {
     const tags = doc.flattenedTags();
     for (let i = 0; i < tags.length; i++) {
@@ -388,6 +406,13 @@ function findTag(doc, nameOrId) {
  * Find folder by name or ID
  */
 function findFolder(doc, nameOrId) {
+  // Same id-before-name caveat as findTag.
+  const byId = firstWhere(doc.flattenedFolders, { id: nameOrId });
+  if (byId) return byId;
+
+  const byName = firstWhere(doc.flattenedFolders, { name: nameOrId });
+  if (byName) return byName;
+
   try {
     const folders = doc.flattenedFolders();
     for (let i = 0; i < folders.length; i++) {
@@ -402,7 +427,37 @@ function findFolder(doc, nameOrId) {
 /**
  * Find task by ID
  */
+/**
+ * Resolve the first element of a whose() specifier, or null.
+ *
+ * whose() pushes the comparison into OmniFocus instead of walking the
+ * collection from JXA. The linear scan it replaces costs one Apple Event per
+ * element: measured against a 743-task database, finding the LAST task took
+ * 12,400ms by scan versus 17ms via whose(), and whose() is flat regardless of
+ * where the element sits. That position-dependence is why writes looked slow —
+ * newly created tasks land at the end of the collection, so every modify of a
+ * fresh task paid the worst case.
+ *
+ * Returns null (not undefined) on no match, and null if whose() is unsupported
+ * for that key so callers can fall back.
+ */
+function firstWhere(collection, criteria) {
+  try {
+    const matches = collection.whose(criteria);
+    if (!matches || matches.length === 0) return null;
+    const first = matches[0];
+    first.id();          // force resolution; throws if the specifier is stale
+    return first;
+  } catch {
+    return null;
+  }
+}
+
 function findTask(doc, taskId) {
+  const hit = firstWhere(doc.flattenedTasks, { id: taskId });
+  if (hit) return hit;
+
+  // Fallback: linear scan, for any case where whose() cannot serve the query.
   try {
     const tasks = doc.flattenedTasks();
     for (let i = 0; i < tasks.length; i++) {

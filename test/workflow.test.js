@@ -651,12 +651,16 @@ describe('Phase 9: Modify & Relative Dates', { timeout: TIMEOUT * 3 }, () => {
 
   it('should flag and unflag task', async () => {
     await runCliJson(`modify "${testTaskId}" --flag`);
+    // `get task` returns {success, task:{...}} — assert on the nested object.
+    // This read `task.flagged` (undefined) until 2026-07-22; the bug was
+    // invisible because Phase 9 always timed out and cancelled this test
+    // before it ran.
     let task = await runCliJson(`get task "${testTaskId}"`);
-    assert.strictEqual(task.flagged, true, 'Should be flagged');
+    assert.strictEqual(task.task.flagged, true, 'Should be flagged');
 
     await runCliJson(`modify "${testTaskId}" --unflag`);
     task = await runCliJson(`get task "${testTaskId}"`);
-    assert.strictEqual(task.flagged, false, 'Should be unflagged');
+    assert.strictEqual(task.task.flagged, false, 'Should be unflagged');
   });
 
   it('should use flag/unflag shortcuts', async () => {
