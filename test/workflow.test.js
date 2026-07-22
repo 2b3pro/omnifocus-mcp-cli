@@ -649,52 +649,6 @@ describe('Phase 9: Modify & Relative Dates', { timeout: TIMEOUT * 3 }, () => {
     assert.ok(result.success, 'Should succeed');
   });
 
-  // Planned date — OmniFocus's "date at which work is intended", distinct from
-  // defer (when it becomes available) and due (deadline). These assert the
-  // round-tripped VALUE, not just result.success, so they can actually fail.
-
-  it('should set planned date at creation and read it back', async () => {
-    const name = uniqueName('Planned_Create');
-    const created = await runCliJson(`add task "${name}" --planned "2030-03-15"`);
-    createdItems.tasks.push(created.id);
-    const got = await runCliJson(`get task "${created.id}"`);
-    assert.ok(got.task.plannedDate, 'plannedDate should be populated');
-    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-03-15');
-  });
-
-  it('should set planned date via modify and read it back', async () => {
-    const result = await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
-    assert.ok(result.success, 'Should succeed');
-    const got = await runCliJson(`get task "${testTaskId}"`);
-    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-01');
-  });
-
-  it('should adjust planned date relatively with --planned-by', async () => {
-    await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
-    const result = await runCliJson(`modify "${testTaskId}" --planned-by "+1w"`);
-    assert.ok(result.success, 'Should succeed');
-    const got = await runCliJson(`get task "${testTaskId}"`);
-    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-08', '+1w should advance exactly 7 days');
-  });
-
-  it('should clear planned date with empty string', async () => {
-    await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
-    const result = await runCliJson(`modify "${testTaskId}" --planned ""`);
-    assert.ok(result.success, 'Should succeed');
-    const got = await runCliJson(`get task "${testTaskId}"`);
-    assert.strictEqual(got.task.plannedDate, null, 'plannedDate should be cleared to null');
-  });
-
-  it('should keep planned, defer and due independent of one another', async () => {
-    const name = uniqueName('Planned_Independent');
-    const created = await runCliJson(`add task "${name}" --planned "2030-04-01" --defer "2030-03-01" --due "2030-05-01"`);
-    createdItems.tasks.push(created.id);
-    const got = await runCliJson(`get task "${created.id}"`);
-    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-04-01', 'planned unchanged by defer/due');
-    assert.strictEqual(got.task.deferDate.slice(0, 10), '2030-03-01', 'defer unchanged by planned');
-    assert.strictEqual(got.task.dueDate.slice(0, 10), '2030-05-01', 'due unchanged by planned');
-  });
-
   it('should flag and unflag task', async () => {
     await runCliJson(`modify "${testTaskId}" --flag`);
     let task = await runCliJson(`get task "${testTaskId}"`);
@@ -714,6 +668,68 @@ describe('Phase 9: Modify & Relative Dates', { timeout: TIMEOUT * 3 }, () => {
   it('should support --dry-run for modifications', async () => {
     const result = await runCliJson(`modify "${testTaskId}" --name "DryRun" --dry-run`);
     assert.ok(result.dryRun === true, 'Should indicate dry run');
+  });
+
+});
+
+// ============================================================================
+// PHASE 9b: PLANNED DATE
+// ============================================================================
+// OmniFocus's "date at which work is intended" — distinct from defer (when it
+// becomes available) and due (deadline). These assert the round-tripped VALUE
+// rather than result.success, so they can actually fail.
+//
+// Own describe block with a generous budget: each JXA round-trip costs 10-13s
+// here, so five read-back tests do not fit inside Phase 9's TIMEOUT * 3.
+
+describe('Phase 9b: Planned Date', { timeout: TIMEOUT * 12 }, () => {
+
+  let plannedTaskId;
+
+  before(async () => {
+    const result = await runCliJson(`add task "${uniqueName('Planned_Task')}"`);
+    plannedTaskId = result.id;
+    createdItems.tasks.push(plannedTaskId);
+  });
+
+  it('should set planned date at creation and read it back', async () => {
+    const created = await runCliJson(`add task "${uniqueName('Planned_Create')}" --planned "2030-03-15"`);
+    createdItems.tasks.push(created.id);
+    const got = await runCliJson(`get task "${created.id}"`);
+    assert.ok(got.task.plannedDate, 'plannedDate should be populated');
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-03-15');
+  });
+
+  it('should set planned date via modify and read it back', async () => {
+    const result = await runCliJson(`modify "${plannedTaskId}" --planned "2030-06-01"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${plannedTaskId}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-01');
+  });
+
+  it('should adjust planned date relatively with --planned-by', async () => {
+    await runCliJson(`modify "${plannedTaskId}" --planned "2030-06-01"`);
+    const result = await runCliJson(`modify "${plannedTaskId}" --planned-by "+1w"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${plannedTaskId}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-08', '+1w should advance exactly 7 days');
+  });
+
+  it('should clear planned date with empty string', async () => {
+    await runCliJson(`modify "${plannedTaskId}" --planned "2030-06-01"`);
+    const result = await runCliJson(`modify "${plannedTaskId}" --planned ""`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${plannedTaskId}"`);
+    assert.strictEqual(got.task.plannedDate, null, 'plannedDate should be cleared to null');
+  });
+
+  it('should keep planned, defer and due independent of one another', async () => {
+    const created = await runCliJson(`add task "${uniqueName('Planned_Independent')}" --planned "2030-04-01" --defer "2030-03-01" --due "2030-05-01"`);
+    createdItems.tasks.push(created.id);
+    const got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-04-01', 'planned unchanged by defer/due');
+    assert.strictEqual(got.task.deferDate.slice(0, 10), '2030-03-01', 'defer unchanged by planned');
+    assert.strictEqual(got.task.dueDate.slice(0, 10), '2030-05-01', 'due unchanged by planned');
   });
 
 });
@@ -828,8 +844,16 @@ describe('Phase 11: Review Workflow', { timeout: TIMEOUT * 2 }, () => {
     assert.ok(projects.length <= 5 || result.totalCount !== undefined, 'Should respect limit');
   });
 
-  // Review interval — the cadence that drives which projects appear above.
-  // Stored by OmniFocus as a repetition record {unit, steps, fixed}.
+});
+
+// ============================================================================
+// PHASE 11b: REVIEW INTERVAL
+// ============================================================================
+// The cadence that decides which projects appear in `of review` above.
+// OmniFocus stores it as a repetition record {unit, steps, fixed}.
+// Separate block for the same reason as Phase 9b: JXA round-trips are slow.
+
+describe('Phase 11b: Review Interval', { timeout: TIMEOUT * 12 }, () => {
 
   it('should set and read back a review interval', async () => {
     const name = uniqueName('ReviewInterval_Project');
