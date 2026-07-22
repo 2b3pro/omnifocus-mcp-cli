@@ -1,4 +1,7 @@
 // List tasks in a project
+//
+// Bulk property fetch: one Apple Event per property for the whole collection
+// rather than one per property per task. See formatTasksBulk in utils/helpers.js.
 (() => {
   try {
     const app = getApp();
@@ -15,20 +18,15 @@
       return JSON.stringify({ success: false, error: "Project not found: " + projectId });
     }
 
-    const projectTasks = project.flattenedTasks();
-    const tasks = [];
-
+    const collection = project.flattenedTasks;
     const limit = opts.limit || 100;
-    let count = 0;
 
-    for (let i = 0; i < projectTasks.length && count < limit; i++) {
-      const task = projectTasks[i];
+    const rows = formatTasksBulk(collection);
 
-      // Skip completed unless requested
-      if (!opts.includeCompleted && task.completed()) continue;
-
-      tasks.push(formatTask(task));
-      count++;
+    const tasks = [];
+    for (let i = 0; i < rows.length && tasks.length < limit; i++) {
+      if (!opts.includeCompleted && rows[i].completed) continue;
+      tasks.push(rows[i]);
     }
 
     return JSON.stringify({
@@ -40,7 +38,7 @@
         sequential: project.sequential(),
         singletonActionHolder: project.singletonActionHolder()
       },
-      totalCount: projectTasks.length
+      totalCount: rows.length
     });
   } catch (e) {
     return JSON.stringify({ success: false, error: e.message });

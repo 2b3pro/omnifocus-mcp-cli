@@ -81,19 +81,30 @@ function getDoc(app) {
  * rather than failing the batch.
  */
 function formatTasksBulk(collection) {
-  const col = (fn, fallback) => {
+  // Every property array is indexed positionally against `ids`. A short array
+  // would silently shift every subsequent row's values onto the wrong task —
+  // corruption that looks like valid data. So length is checked, and a
+  // mismatched property is discarded (nulls) rather than zipped.
+  let ids = null;
+  try {
+    const v = collection.id();
+    ids = Array.isArray(v) ? v : null;
+  } catch {
+    ids = null;
+  }
+  if (!ids) return [];   // can't identify rows; caller should fall back
+  const n = ids.length;
+  const blank = () => new Array(n).fill(null);
+
+  const col = (fn) => {
     try {
       const v = fn();
-      return Array.isArray(v) ? v : null;
+      if (!Array.isArray(v) || v.length !== n) return null;
+      return v;
     } catch {
       return null;
     }
   };
-
-  const ids = col(() => collection.id());
-  if (!ids) return [];   // can't identify rows; caller should fall back
-  const n = ids.length;
-  const blank = () => new Array(n).fill(null);
 
   const names = col(() => collection.name()) || blank();
   const notes = col(() => collection.note()) || blank();
@@ -128,6 +139,50 @@ function formatTasksBulk(collection) {
       blocked: blocked[i],
       tags: Array.isArray(tagNames[i]) ? tagNames[i] : [],
       projectName: projNames[i] === undefined ? null : projNames[i]
+    };
+  }
+  return out;
+}
+
+/**
+ * Brief bulk formatter — the {id, name, dueDate, flagged, completed} shape used
+ * by list commands' `--brief` mode. Uses effectiveDueDate (inherited from the
+ * containing project when the task has none), matching the per-task path.
+ */
+function formatTasksBriefBulk(collection) {
+  let ids = null;
+  try {
+    const v = collection.id();
+    ids = Array.isArray(v) ? v : null;
+  } catch {
+    ids = null;
+  }
+  if (!ids) return [];
+  const n = ids.length;
+  const blank = () => new Array(n).fill(null);
+  const col = (fn) => {
+    try {
+      const v = fn();
+      if (!Array.isArray(v) || v.length !== n) return null;
+      return v;
+    } catch {
+      return null;
+    }
+  };
+
+  const names = col(() => collection.name()) || blank();
+  const due = col(() => collection.effectiveDueDate()) || blank();
+  const flagged = col(() => collection.flagged()) || blank();
+  const completed = col(() => collection.completed()) || blank();
+
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = {
+      id: ids[i],
+      name: names[i],
+      dueDate: due[i] ? new Date(due[i]).toISOString() : null,
+      flagged: flagged[i],
+      completed: completed[i]
     };
   }
   return out;

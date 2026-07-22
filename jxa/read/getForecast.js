@@ -6,7 +6,7 @@
     const opts = parseJsonArg(4, {});
 
     const days = opts.days || 7;
-    const allTasks = doc.flattenedTasks();
+    const collection = doc.flattenedTasks;
 
     const now = new Date();
     const endDate = new Date(now);
@@ -15,14 +15,23 @@
     // Group tasks by date
     const forecast = {};
 
-    for (let i = 0; i < allTasks.length; i++) {
-      const task = allTasks[i];
+    // Bulk property fetch — see formatTasksBulk in utils/helpers.js
+    const rows = formatTasksBulk(collection);
+    let effDue = null;
+    try {
+      const v = collection.effectiveDueDate();
+      effDue = (Array.isArray(v) && v.length === rows.length) ? v : null;
+    } catch {
+      effDue = null;
+    }
+    if (!effDue) effDue = new Array(rows.length).fill(null);
 
+    for (let i = 0; i < rows.length; i++) {
       // Skip completed
-      if (task.completed()) continue;
+      if (rows[i].completed) continue;
 
-      const dueDate = task.effectiveDueDate();
-      if (!dueDate) continue;
+      if (!effDue[i]) continue;
+      const dueDate = new Date(effDue[i]);
 
       // Skip tasks due after forecast range
       if (dueDate > endDate) continue;
@@ -34,7 +43,7 @@
         forecast[dateKey] = [];
       }
 
-      forecast[dateKey].push(formatTask(task));
+      forecast[dateKey].push(rows[i]);
     }
 
     // Convert to sorted array

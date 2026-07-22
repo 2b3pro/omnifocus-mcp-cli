@@ -14,12 +14,8 @@
       return JSON.stringify({ success: false, error: "Project not found: " + projectId });
     }
 
-    // Get project tasks
-    const projectTasks = project.tasks();
-    const tasks = [];
-    for (let i = 0; i < projectTasks.length && i < 50; i++) {
-      tasks.push(formatTask(projectTasks[i]));
-    }
+    // Get project tasks (bulk property fetch — see formatTasksBulk in helpers)
+    const tasks = formatTasksBulk(project.tasks).slice(0, 50);
 
     const projectData = formatProject(project);
     projectData.tasks = tasks;
