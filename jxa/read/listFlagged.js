@@ -1,38 +1,25 @@
 // List flagged tasks
+//
+// Bulk property fetch: one Apple Event per property for the whole collection
+// rather than one per property per task. See formatTasksBulk in utils/helpers.js.
 (() => {
   try {
     const app = getApp();
     const doc = getDoc(app);
     const opts = parseJsonArg(4, {});
 
-    const allTasks = doc.flattenedTasks();
-    const tasks = [];
-
+    const collection = doc.flattenedTasks;
     const limit = opts.limit || 100;
-    let count = 0;
 
-    for (let i = 0; i < allTasks.length && count < limit; i++) {
-      const task = allTasks[i];
+    const rows = opts.brief
+      ? formatTasksBriefBulk(collection)
+      : formatTasksBulk(collection);
 
-      // Skip completed unless requested
-      if (!opts.includeCompleted && task.completed()) continue;
-
-      // Only flagged tasks
-      if (!task.flagged()) continue;
-
-      // Brief mode returns minimal info (much faster due to reduced IPC overhead)
-      if (opts.brief) {
-        tasks.push({
-          id: task.id(),
-          name: task.name(),
-          dueDate: task.effectiveDueDate() ? task.effectiveDueDate().toISOString() : null,
-          flagged: true,
-          completed: task.completed()
-        });
-      } else {
-        tasks.push(formatTask(task));
-      }
-      count++;
+    const tasks = [];
+    for (let i = 0; i < rows.length && tasks.length < limit; i++) {
+      if (!opts.includeCompleted && rows[i].completed) continue;
+      if (!rows[i].flagged) continue;
+      tasks.push(rows[i]);
     }
 
     return JSON.stringify({

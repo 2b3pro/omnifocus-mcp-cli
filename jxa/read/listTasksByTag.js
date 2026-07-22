@@ -1,4 +1,9 @@
 // List tasks with a specific tag
+//
+// Bulk property fetch: one Apple Event per property for the whole collection
+// rather than one per property per task. See formatTasksBulk in utils/helpers.js.
+// NOTE: returns a bare ARRAY (not a wrapped object) — preserving the original
+// contract, which callers depend on.
 (() => {
   try {
     const app = getApp();
@@ -18,30 +23,29 @@
     const limit = opts.limit || 100;
     const includeCompleted = opts.includeCompleted || false;
 
-    // Get all tasks and filter by tag
-    const allTasks = doc.flattenedTasks();
+    const tagId = tag.id();
+    const tagName = tag.name();
+
+    const collection = doc.flattenedTasks;
+    const rows = formatTasksBulk(collection);
+
+    // Match on id OR name, as the per-task version did.
+    let tagIds = null;
+    try { tagIds = collection.tags.id(); } catch { tagIds = null; }
+    if (tagIds && tagIds.length !== rows.length) tagIds = null;
+
     const results = [];
+    for (let i = 0; i < rows.length && results.length < limit; i++) {
+      const row = rows[i];
 
-    for (let i = 0; i < allTasks.length && results.length < limit; i++) {
-      const task = allTasks[i];
+      if (!includeCompleted && row.completed) continue;
 
-      // Skip completed unless requested
-      if (!includeCompleted && task.completed()) continue;
+      const ids = tagIds ? tagIds[i] : null;
+      const byId = Array.isArray(ids) && ids.indexOf(tagId) !== -1;
+      const byName = Array.isArray(row.tags) && row.tags.indexOf(tagName) !== -1;
+      if (!byId && !byName) continue;
 
-      // Check if task has this tag
-      try {
-        const taskTags = task.tags();
-        let hasTag = false;
-        for (let j = 0; j < taskTags.length; j++) {
-          if (taskTags[j].id() === tag.id() || taskTags[j].name() === tag.name()) {
-            hasTag = true;
-            break;
-          }
-        }
-        if (hasTag) {
-          results.push(formatTask(task));
-        }
-      } catch {}
+      results.push(row);
     }
 
     return JSON.stringify(results);
