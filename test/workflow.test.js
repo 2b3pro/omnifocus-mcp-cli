@@ -303,6 +303,15 @@ describe('Phase 2b: Folder Deletion', { timeout: TIMEOUT * 12 }, () => {
     assert.ok(result.errors && /not found/i.test(result.errors[0].error), 'Should say not found');
   });
 
+  it('should surface not-found in --dry-run too, not report silent success', async () => {
+    // Regression: dry-run returned {success:true, wouldDelete:[]} and dropped
+    // the errors array, so a typo'd name looked like "nothing to do".
+    const result = await runCliJson('folder delete "CLI_Test_no_such_folder_xyz" --dry-run');
+    assert.strictEqual(result.dryRun, true, 'Should be a dry run');
+    assert.strictEqual(result.success, false, 'Must NOT claim success for a name that does not exist');
+    assert.ok(result.errors && /not found/i.test(result.errors[0].error), 'Should report not found');
+  });
+
   it('should handle a folder name containing a comma', async () => {
     // Names are passed as a JSON array, not comma-joined, precisely for this.
     const name = uniqueName('Del_A,B');

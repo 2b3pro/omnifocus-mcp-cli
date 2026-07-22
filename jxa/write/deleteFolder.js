@@ -82,11 +82,16 @@
     }
 
     if (opts.dryRun) {
+      // Errors must surface here too. Reporting "0 folder(s) would be deleted"
+      // with success:true for a name that does not exist tells someone who
+      // typo'd it that everything is fine — the preview's whole job is to warn.
       return JSON.stringify({
-        success: true,
+        success: errors.length === 0,
         dryRun: true,
-        message: "DRY RUN: " + wouldDelete.length + " folder(s) would be deleted",
-        wouldDelete: wouldDelete
+        message: "DRY RUN: " + wouldDelete.length + " folder(s) would be deleted" +
+                 (errors.length > 0 ? ", " + errors.length + " not found" : ""),
+        wouldDelete: wouldDelete,
+        errors: errors.length > 0 ? errors : undefined
       });
     }
 
