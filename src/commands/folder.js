@@ -79,6 +79,43 @@ Examples:
       }
     });
 
+  // Delete folder(s)
+  folder
+    .command('delete <nameOrIds...>')
+    .alias('rm')
+    .description('Delete folder(s) — refuses non-empty folders without --force')
+    .option('--force', 'Delete even if the folder contains projects or subfolders')
+    .option('--dry-run', 'Preview what would be deleted, including contents')
+    .option('--json', 'Output as JSON')
+    .option('--pretty', 'Pretty print JSON')
+    .addHelpText('after', `
+Deleting a folder also deletes every project, task and subfolder inside it,
+permanently. An empty folder deletes directly; a non-empty one is refused
+unless you pass --force, and the refusal reports exactly what it holds.
+
+Examples:
+  of folder delete "Old Folder"                  # only if empty
+  of folder delete "Archive" --dry-run           # show contents first
+  of folder delete "Archive" --force             # delete it and its contents
+  of folder rm "A" "B"                           # several at once
+`)
+    .action(async (nameOrIds, options) => {
+      try {
+        await requireOmniFocus();
+        const opts = {
+          force: options.force || false,
+          dryRun: options.dryRun || false
+        };
+        // Passed as a JSON array, not comma-joined: folder NAMES may contain
+        // commas, and this command accepts a name or an id.
+        const result = await runJxa('write', 'deleteFolder', [JSON.stringify(nameOrIds), JSON.stringify(opts)]);
+        print(result, options);
+      } catch (err) {
+        printError(err.message);
+        process.exit(1);
+      }
+    });
+
   // Move project to folder
   program
     .command('move <projectNameOrId>')

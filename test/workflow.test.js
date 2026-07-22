@@ -236,6 +236,86 @@ describe('Phase 2: Folder Operations', { timeout: TIMEOUT * 3 }, () => {
 });
 
 // ============================================================================
+// PHASE 2b: FOLDER DELETION
+// ============================================================================
+// Deleting a folder takes every project, task and subfolder inside it,
+// permanently. The most important assertion here is the NEGATIVE one: that a
+// refused delete leaves the contents untouched. A guard that reports refusal
+// while still deleting would be worse than having no guard.
+
+describe('Phase 2b: Folder Deletion', { timeout: TIMEOUT * 12 }, () => {
+
+  it('should delete an empty folder without --force', async () => {
+    const name = uniqueName('Del_Empty');
+    await runCliJson(`folder add "${name}"`);
+
+    const result = await runCliJson(`folder delete "${name}"`);
+    assert.ok(result.success, 'Should succeed');
+    assert.strictEqual(result.deleted.length, 1, 'Should report one deletion');
+
+    const folders = await runCliJson('list folders');
+    assert.ok(!folders.folders.some(f => f.name === name), 'Folder should be gone');
+  });
+
+  it('should REFUSE a non-empty folder without --force, and delete nothing', async () => {
+    const folderName = uniqueName('Del_Guarded');
+    const projectName = uniqueName('Del_Guarded_Proj');
+    await runCliJson(`folder add "${folderName}"`);
+    await runCliJson(`add project "${projectName}" --folder "${folderName}"`);
+    createdItems.projects.push(projectName);
+
+    const result = await runCliJson(`folder delete "${folderName}"`);
+    assert.strictEqual(result.success, false, 'Should not report success');
+    assert.strictEqual(result.deleted.length, 0, 'Should delete nothing');
+    assert.ok(result.refused && result.refused.length === 1, 'Should report a refusal');
+    assert.ok(/not empty/i.test(result.refused[0].error), 'Refusal should say why');
+
+    // The assertion that matters: nothing was destroyed.
+    const folders = await runCliJson('list folders');
+    assert.ok(folders.folders.some(f => f.name === folderName), 'Folder must survive refusal');
+    const proj = await runCliJson(`get project "${projectName}"`);
+    assert.ok(proj.success, 'Contained project must survive refusal');
+
+    // Clean up via the --force path, which also exercises it.
+    const forced = await runCliJson(`folder delete "${folderName}" --force`);
+    assert.ok(forced.success, '--force should succeed');
+    const after = await runCliJson('list folders');
+    assert.ok(!after.folders.some(f => f.name === folderName), 'Folder gone after --force');
+  });
+
+  it('should report contents in --dry-run without deleting', async () => {
+    const folderName = uniqueName('Del_DryRun');
+    await runCliJson(`folder add "${folderName}"`);
+
+    const result = await runCliJson(`folder delete "${folderName}" --dry-run`);
+    assert.ok(result.dryRun === true, 'Should indicate dry run');
+    assert.ok(result.wouldDelete[0].contents, 'Should report contents');
+
+    const folders = await runCliJson('list folders');
+    assert.ok(folders.folders.some(f => f.name === folderName), 'Dry run must not delete');
+
+    await runCliJson(`folder delete "${folderName}"`);
+  });
+
+  it('should error cleanly on a nonexistent folder', async () => {
+    const result = await runCliJson('folder delete "CLI_Test_no_such_folder_xyz"');
+    assert.strictEqual(result.success, false, 'Should not succeed');
+    assert.ok(result.errors && /not found/i.test(result.errors[0].error), 'Should say not found');
+  });
+
+  it('should handle a folder name containing a comma', async () => {
+    // Names are passed as a JSON array, not comma-joined, precisely for this.
+    const name = uniqueName('Del_A,B');
+    await runCliJson(`folder add "${name}"`);
+
+    const result = await runCliJson(`folder delete "${name}"`);
+    assert.ok(result.success, 'Should succeed');
+    assert.strictEqual(result.deleted[0].name, name, 'Should delete the exact folder');
+  });
+
+});
+
+// ============================================================================
 // PHASE 3: TAG OPERATIONS (P1 - NEW)
 // ============================================================================
 
