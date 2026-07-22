@@ -77,6 +77,15 @@ function formatTask(task) {
       if (proj) projectName = proj.name();
     } catch {}
 
+    // Planned date requires a newer OmniFocus than defer/due do. Probe it
+    // defensively so an older app degrades to null instead of throwing the
+    // whole formatter into its catch and losing every other field.
+    let plannedDate = null;
+    try {
+      const p = task.plannedDate();   // single IPC round-trip; formatTask runs per search result
+      plannedDate = p ? p.toISOString() : null;
+    } catch {}
+
     return {
       id: task.id(),
       name: task.name(),
@@ -84,6 +93,7 @@ function formatTask(task) {
       completed: task.completed(),
       flagged: task.flagged(),
       deferDate: task.deferDate() ? task.deferDate().toISOString() : null,
+      plannedDate: plannedDate,
       dueDate: task.dueDate() ? task.dueDate().toISOString() : null,
       completionDate: task.completionDate() ? task.completionDate().toISOString() : null,
       estimatedMinutes: task.estimatedMinutes() || null,
@@ -114,6 +124,20 @@ function formatProject(project) {
       if (tag) primaryTag = tag.name();
     } catch {}
 
+    // Both are version-dependent; degrade to null rather than throwing the
+    // formatter into its catch (see formatTask).
+    let plannedDate = null;
+    try {
+      const p = project.plannedDate();
+      plannedDate = p ? p.toISOString() : null;
+    } catch {}
+
+    let reviewInterval = null;
+    try {
+      const ri = project.reviewInterval();
+      if (ri) reviewInterval = { unit: ri.unit, steps: ri.steps, fixed: ri.fixed };
+    } catch {}
+
     return {
       id: project.id(),
       name: project.name(),
@@ -123,10 +147,12 @@ function formatProject(project) {
       flagged: project.flagged(),
       sequential: project.sequential(),
       deferDate: project.deferDate() ? project.deferDate().toISOString() : null,
+      plannedDate: plannedDate,
       dueDate: project.dueDate() ? project.dueDate().toISOString() : null,
       completionDate: project.completionDate() ? project.completionDate().toISOString() : null,
       lastReviewDate: project.lastReviewDate() ? project.lastReviewDate().toISOString() : null,
       nextReviewDate: project.nextReviewDate() ? project.nextReviewDate().toISOString() : null,
+      reviewInterval: reviewInterval,
       taskCount: project.numberOfTasks(),
       availableTaskCount: project.numberOfAvailableTasks(),
       completedTaskCount: project.numberOfCompletedTasks(),

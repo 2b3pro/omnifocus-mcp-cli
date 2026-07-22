@@ -167,7 +167,8 @@ Examples:
     .option('--unflag', 'Unflag project')
     .option('--sequential', 'Set to sequential')
     .option('--parallel', 'Set to parallel')
-    .option('-t, --tag <name>', 'Set primary tag')
+    .option('-t, --tag <name>', 'Set primary tag (use "" to clear)')
+    .option('--review-interval <interval>', 'Set review cadence: <n><d|w|m|y> (e.g. 1w, 2m)')
     .option('--status <status>', 'Set status (active, on-hold, dropped)')
     .option('--dry-run', 'Preview without modifying')
     .option('--json', 'Output as JSON')
@@ -196,7 +197,8 @@ Examples:
         if (options.unflag) opts.flagged = false;
         if (options.sequential) opts.sequential = true;
         if (options.parallel) opts.sequential = false;
-        if (options.tag) opts.tag = options.tag;
+        if (options.tag !== undefined) opts.tag = options.tag || null;
+        if (options.reviewInterval) opts.reviewInterval = options.reviewInterval;
         if (options.status) opts.status = options.status;
 
         const result = await runJxa('write', 'modifyProject', [nameOrId, JSON.stringify(opts)]);

@@ -17,6 +17,8 @@ export function registerModifyCommand(program) {
     .option('--due-by <offset>', 'Adjust due date relatively (+3d, -1w, +2m)')
     .option('--defer <date>', 'Set defer date (use "" to clear)')
     .option('--defer-by <offset>', 'Adjust defer date relatively (+3d, -1w, +2m)')
+    .option('--planned <date>', 'Set planned date — when work is intended (use "" to clear)')
+    .option('--planned-by <offset>', 'Adjust planned date relatively (+3d, -1w, +2m)')
     .option('-f, --flag', 'Set flagged')
     .option('--unflag', 'Remove flag')
     .option('-t, --tag <name>', 'Set primary tag (use "" to clear)')
@@ -44,6 +46,8 @@ Examples:
         if (options.dueBy) opts.dueBy = options.dueBy;
         if (options.defer !== undefined) opts.deferDate = options.defer || null;
         if (options.deferBy) opts.deferBy = options.deferBy;
+        if (options.planned !== undefined) opts.plannedDate = options.planned || null;
+        if (options.plannedBy) opts.plannedBy = options.plannedBy;
         if (options.flag) opts.flagged = true;
         if (options.unflag) opts.flagged = false;
         if (options.tag !== undefined) opts.tag = options.tag || null;

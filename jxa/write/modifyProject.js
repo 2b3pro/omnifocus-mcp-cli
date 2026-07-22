@@ -134,12 +134,45 @@
       changes.push("marked reviewed");
     }
 
-    // Tag
-    if (opts.tag) {
-      const tag = findTag(doc, opts.tag);
-      if (tag) {
-        project.primaryTag = tag;
-        changes.push("tag → " + opts.tag);
+    // Review interval — "1w", "2m", "10d", "1y". OmniFocus stores this as a
+    // repetition-interval record {unit, steps, fixed}; `fixed` is preserved
+    // from the project's existing interval so we don't silently flip its
+    // fixed/sliding behavior while only changing the cadence.
+    if (opts.reviewInterval !== undefined) {
+      const match = String(opts.reviewInterval).trim().match(/^(\d+)\s*([dwmy])$/i);
+      if (!match) {
+        return JSON.stringify({
+          success: false,
+          error: "Invalid review interval: " + opts.reviewInterval + ". Expected <number><d|w|m|y>, e.g. 1w, 2m, 10d, 1y."
+        });
+      }
+      const unitMap = { d: "day", w: "week", m: "month", y: "year" };
+      const steps = parseInt(match[1], 10);
+      const unit = unitMap[match[2].toLowerCase()];
+
+      let fixed = true;
+      try {
+        const existing = project.reviewInterval();
+        if (existing && typeof existing.fixed === "boolean") fixed = existing.fixed;
+      } catch {}
+
+      project.reviewInterval = { unit: unit, steps: steps, fixed: fixed };
+      changes.push("reviewInterval → " + steps + " " + unit + (steps === 1 ? "" : "s"));
+    }
+
+    // Tag ("" or null clears the primary tag)
+    if (opts.tag !== undefined) {
+      if (opts.tag === null || opts.tag === "") {
+        project.primaryTag = null;
+        changes.push("cleared tag");
+      } else {
+        const tag = findTag(doc, opts.tag);
+        if (tag) {
+          project.primaryTag = tag;
+          changes.push("tag → " + opts.tag);
+        } else {
+          return JSON.stringify({ success: false, error: "Tag not found: " + opts.tag });
+        }
       }
     }
 

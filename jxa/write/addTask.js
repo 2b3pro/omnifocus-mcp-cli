@@ -24,6 +24,7 @@
         note: opts.note || null,
         dueDate: opts.dueDate || null,
         deferDate: opts.deferDate || null,
+        plannedDate: opts.plannedDate || null,
         flagged: opts.flagged || false,
         tag: opts.tag || null,
         tags: opts.tags || null,
@@ -110,6 +111,11 @@
       if (defer) task.deferDate = defer;
     }
 
+    if (opts.plannedDate) {
+      const planned = parseDate(opts.plannedDate);
+      if (planned) task.plannedDate = planned;
+    }
+
     if (opts.flagged) {
       task.flagged = true;
     }
@@ -150,6 +156,7 @@
         project: opts.project || "(inbox)",
         dueDate: opts.dueDate || null,
         deferDate: opts.deferDate || null,
+        plannedDate: opts.plannedDate || null,
         flagged: opts.flagged || false,
         tag: opts.tag || null,
         tags: opts.tags || null
