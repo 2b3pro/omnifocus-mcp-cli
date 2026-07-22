@@ -1,3 +1,14 @@
+---
+title: OmniFocus CLI Reference
+description: Complete command reference for the OmniFocus CLI (`of`) on macOS
+version: 0.1.0
+updated: 2026-01-12
+author: Ian Shen
+contextPrimers:
+  - OmniFocus
+  - CLI
+---
+
 # OmniFocus CLI (`of`) — Complete Reference
 
 > CLI for OmniFocus 4 on macOS. Wraps JXA scripts for fast, scriptable task management.
@@ -10,149 +21,188 @@ These flags work with most commands:
 
 | Flag | Short | Description |
 |------|-------|-------------|
-| `--json` | `-j` | Output as JSON |
+| `--json` | | Output as JSON |
 | `--pretty` | | Pretty-print JSON output |
 | `--quiet` | `-q` | Output only IDs (for piping) |
+| `--dry-run` | | Preview without executing (write commands) |
 | `--help` | `-h` | Show command help |
+
+---
+
+## Dates: four distinct levers
+
+OmniFocus has four scheduling concepts. They are not interchangeable, and
+using one to mean another is the most common way a task list goes stale.
+
+| Lever | OmniFocus's meaning | Use it for | CLI |
+|-------|---------------------|-----------|-----|
+| **Defer** | when the item becomes *available* | blocked-until-prereq, "don't surface until X" | `--defer`, `--defer-by` |
+| **Planned** | "the date at which work is *intended*" | "I mean to get to this Thursday" on something already actionable | `--planned`, `--planned-by` |
+| **Due** | a real deadline | genuine consequence if missed | `--due`, `--due-by` |
+| **Review interval** | project re-examination cadence | deciding what `of review` surfaces | `--review-interval` (projects) |
+
+Notes:
+
+- **Planned is not defer.** Deferring something to express intent hides it from
+  the Available list, which is wrong when the work *could* be done now. Defer
+  answers "can I?"; planned answers "will I?".
+- **Due is not a priority proxy.** Fake deadlines erode the due list until real
+  ones stop registering. Use the flag for urgency instead.
+- Date arguments accept `today`, `tomorrow`, `+3d`, `2026-01-15`.
+- Relative `--*-by` offsets accept `<±n><d|w|m>` and adjust the *existing*
+  value (falling back to now if unset).
+- Pass `""` to clear a date: `of modify abc123 --planned ""`.
+- Planned date requires a recent OmniFocus (verified on 4.8.12). On older
+  versions it reads back as `null` rather than erroring.
 
 ---
 
 ## List Commands
 
-### `of list inbox`
+### `of list inbox` (alias: `ls i`)
 
 List tasks in the Inbox.
 
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-a, --all` | Include completed tasks |
+| `--brief` | Brief output (faster, fewer details) [default] |
+| `--full` | Full output with all task details |
+
 ```bash
-# Basic usage
-of list inbox
-
-# JSON output
-of list inbox --json
-
-# IDs only (for piping to other commands)
-of list inbox -q
-
-# Limit results
-of list inbox --limit 10
-
-# Include completed tasks
-of list inbox --all
+of list inbox                    # List inbox tasks (brief mode)
+of ls i --limit 10               # First 10 inbox tasks
+of list inbox --all              # Include completed tasks
+of list inbox --full             # Full details (slower)
+of list inbox -q | xargs of complete  # Complete all inbox tasks
 ```
 
 ### `of list today`
 
 List tasks due or available today.
 
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `--flagged` | Include flagged tasks |
+| `--brief` | Brief output [default] |
+| `--full` | Full output |
+
 ```bash
-# Basic usage
-of list today
-
-# JSON for scripting
-of list today --json
-
-# Just the IDs
-of list today -q
+of list today                    # Tasks due/available today
+of list today --flagged          # Include all flagged tasks
+of list today -q | wc -l         # Count today's tasks
 ```
 
 ### `of list flagged`
 
 List all flagged tasks.
 
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-a, --all` | Include completed tasks |
+| `--brief` | Brief output [default] |
+| `--full` | Full output |
+
 ```bash
-# Basic usage
-of list flagged
-
-# Limit to top 5
-of list flagged --limit 5
-
-# JSON output
-of list flagged --json --pretty
+of list flagged                  # List flagged tasks
+of list flagged --limit 5        # Top 5 flagged tasks
+of list flagged --full --pretty  # Full details, formatted
 ```
 
-### `of list projects`
+### `of list projects` (alias: `ls p`)
 
 List all active projects.
 
+| Option | Description |
+|--------|-------------|
+| `-f, --folder <name>` | Filter by folder name or ID |
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-a, --all` | Include completed/dropped/on-hold projects |
+| `--on-hold` | Include on-hold projects |
+| `--brief` | Brief output (faster) |
+| `--full` | Full output |
+
 ```bash
-# Basic usage
-of list projects
-
-# Include completed/dropped projects
-of list projects --all
-
-# JSON output
-of list projects --json
+of list projects                 # List active projects
+of ls p --folder "Work"          # Projects in a folder
+of list projects --all           # Include completed/dropped
+of list projects --on-hold       # Include paused projects
+of list projects -q              # Just IDs (for scripting)
 ```
 
-### `of list folders`
+### `of list folders` (alias: `ls f`)
 
 List folder hierarchy.
 
-```bash
-# Basic usage
-of list folders
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-f, --folder <name>` | List subfolders within this folder |
+| `-r, --root-only` | Only show top-level folders |
+| `--hidden` | Include hidden folders |
 
-# JSON output
-of list folders --json
+```bash
+of list folders                  # List all folders
+of ls f --root-only              # Only top-level folders
+of list folders -f "Work"        # Subfolders of "Work"
+of list folders --hidden         # Include hidden folders
 ```
 
-### `of list tags`
+### `of list tags` (alias: `ls t`)
 
 List all tags.
 
-```bash
-# Basic usage
-of list tags
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `--hidden` | Include hidden tags |
 
-# JSON output
-of list tags --json
+```bash
+of list tags                     # List all tags
+of ls t --hidden                 # Include hidden tags
+of list tags -q                  # Just IDs
 ```
 
 ### `of list forecast`
 
 List tasks for upcoming days.
 
+| Option | Description |
+|--------|-------------|
+| `-d, --days <n>` | Number of days to show (default: 7) |
+
 ```bash
-# Default: next 7 days
-of list forecast
-
-# Custom range
-of list forecast --days 14
-
-# JSON output
-of list forecast --json
+of list forecast                 # Next 7 days
+of list forecast --days 14       # Next 2 weeks
+of list forecast --days 1        # Just tomorrow
+of list forecast --json          # JSON for scripting
 ```
 
 ---
 
 ## Add Commands
 
-### `of add "<task>"`
+### `of add [task] [name]` (alias: `of add t`)
 
-Add a new task.
-
-**Syntax:**
-```bash
-of add "<task name>" [options]
-```
-
-**Options:**
+Add a new task. Default command under `of add`.
 
 | Option | Description |
 |--------|-------------|
-| `--project "<name>"` | Assign to project |
-| `--folder "<name>"` | Assign to folder (for projects) |
-| `--due "<date>"` | Set due date |
-| `--defer "<date>"` | Set defer date |
-| `--tag "<name>"` | Add tag |
-| `--flagged` | Mark as flagged |
-| `--note "<text>"` | Add note |
-| `--estimate "<duration>"` | Set time estimate |
+| `-p, --project <name>` | Add to specific project (default: inbox) |
+| `-n, --note <text>` | Task note |
+| `-d, --due <date>` | Due date |
+| `--defer <date>` | Defer/start date |
+| `--planned <date>` | Planned date — when work is intended |
+| `-f, --flagged` | Mark as flagged |
+| `-t, --tag <name>` | Add primary tag |
+| `--tags <names>` | Add multiple tags (comma-separated) |
+| `-e, --estimate <minutes>` | Estimated time in minutes |
+| `--dry-run` | Preview without creating |
 
-**Date formats:** `today`, `tomorrow`, `+3d`, `+1w`, `2026-01-15`, `next monday`
-
-**Examples:**
+**Date formats:** `today`, `tomorrow`, `+3d`, `+1w`, `2026-01-15`, `next week`
 
 ```bash
 # Simple task (goes to Inbox)
@@ -173,12 +223,6 @@ of add "Urgent review" --flagged --tag "Work"
 # Task with defer and due
 of add "Quarterly report" --defer "2026-03-01" --due "2026-03-15"
 
-# Task with note
-of add "Call dentist" --note "Ask about cleaning schedule"
-
-# Task with time estimate
-of add "Write blog post" --estimate "2h"
-
 # Full example
 of add "Review contract" \
   --project "Legal" \
@@ -186,36 +230,43 @@ of add "Review contract" \
   --tag "High Priority" \
   --flagged \
   --note "Check section 4.2"
+
+# Bulk add from stdin:
+cat tasks.txt | of add --project "Work"
+echo -e "Task 1\nTask 2" | of add
 ```
 
-### `of quick "<task>"`
+### `of quick <name>` (alias: `q`)
 
 Quick add to Inbox (minimal options, fast).
 
-```bash
-# Basic quick add
-of quick "Call mom"
+| Option | Description |
+|--------|-------------|
+| `-d, --due <date>` | Due date |
+| `-f, --flagged` | Mark as flagged |
 
-# Quick add with flag
-of quick "Urgent task" --flagged
+```bash
+of quick "Call mom"
+of q "Urgent task" --flagged
 ```
 
-### `of add project "<name>"`
+### `of add project <name>` (alias: `of add p`)
 
 Create a new project.
 
-**Options:**
-
 | Option | Description |
 |--------|-------------|
-| `--folder "<name>"` | Place in folder |
-| `--tasks "<csv>"` | Comma-separated initial tasks |
-| `--due "<date>"` | Project due date |
-| `--note "<text>"` | Project note |
-| `--sequential` | Sequential project (vs parallel) |
-| `--review "<interval>"` | Review interval (e.g., `1w`, `2w`) |
-
-**Examples:**
+| `-f, --folder <name>` | Add to specific folder |
+| `-n, --note <text>` | Project note |
+| `-d, --due <date>` | Due date |
+| `--defer <date>` | Defer/start date |
+| `--flagged` | Mark as flagged |
+| `-t, --tag <name>` | Add primary tag |
+| `--tasks <list>` | Tasks to add (comma-separated) |
+| `--sequential` | Sequential project |
+| `--parallel` | Parallel project |
+| `--single-actions` | Single action list |
+| `--dry-run` | Preview without creating |
 
 ```bash
 # Simple project
@@ -229,229 +280,321 @@ of add project "Launch Website" \
   --folder "Work" \
   --tasks "Design mockups,Build frontend,Deploy to production"
 
-# Sequential project (tasks must be done in order)
+# Sequential project
 of add project "Onboarding" --sequential
 
-# Project with review interval
-of add project "Weekly Review" --review "1w"
+# Pipe tasks from stdin:
+cat tasks.txt | of add project "New Project"
+echo -e "Task 1\nTask 2\nTask 3" | of add project "Quick Project"
 ```
 
-### Bulk Add from stdin
+### `of add batch` (alias: `of add b`)
 
-Pipe tasks from a file or command.
+Create projects and tasks from an indented outline via stdin.
 
-```bash
-# From file (one task per line)
-cat tasks.txt | of add --project "Work"
-
-# From echo
-echo -e "Task 1\nTask 2\nTask 3" | of add --project "Inbox"
-
-# With options applied to all
-cat tasks.txt | of add --project "Work" --due "+1w" --tag "Batch"
-```
-
-### `of add batch`
-
-Create projects and tasks from an indented outline.
+| Option | Description |
+|--------|-------------|
+| `-f, --folder <name>` | Add all projects to existing folder |
+| `-c, --create-folder <name>` | Create new folder for all projects |
+| `--sequential` | Make all projects sequential |
+| `--dry-run` | Preview without creating |
 
 **Input format:**
 ```
 - Project Name
   - Task 1
   - Task 2
-    - Subtask 2.1
 - Another Project
   - Task A
 ```
 
-**Examples:**
-
 ```bash
-# From file
 cat outline.md | of add batch --folder "2026 Goals"
-
-# Inline
-echo "- My Project
-  - First task
-  - Second task" | of add batch
+pbpaste | of add batch --dry-run
 ```
 
 ---
 
 ## Modify Commands
 
-### `of modify <task-id>`
+### `of modify <taskId>` (alias: `mod`)
 
 Update an existing task.
 
-**Options:**
-
 | Option | Description |
 |--------|-------------|
-| `--name "<text>"` | Rename task |
-| `--project "<name>"` | Move to project |
-| `--due "<date>"` | Change due date |
-| `--defer "<date>"` | Change defer date |
-| `--tag "<name>"` | Add tag |
-| `--flagged` | Set flagged |
-| `--unflagged` | Remove flag |
-| `--note "<text>"` | Update note |
-| `--order <n>` | Reorder within project |
-
-**Examples:**
+| `--name <name>` | Set task name |
+| `-n, --note <text>` | Set task note |
+| `-d, --due <date>` | Set due date (use "" to clear) |
+| `--due-by <offset>` | Adjust due date relatively (+3d, -1w) |
+| `--defer <date>` | Set defer date (use "" to clear) |
+| `--defer-by <offset>` | Adjust defer date relatively |
+| `--planned <date>` | Set planned date (use "" to clear) |
+| `--planned-by <offset>` | Adjust planned date relatively |
+| `-f, --flag` | Set flagged |
+| `--unflag` | Remove flag |
+| `-t, --tag <name>` | Set primary tag (use "" to clear) |
+| `-p, --project <name>` | Move to project |
+| `-e, --estimate <minutes>` | Set estimated time |
+| `--dry-run` | Preview without modifying |
 
 ```bash
-# Change due date
-of modify abc123 --due "+3d"
-
-# Move to different project
-of modify abc123 --project "Different Project"
-
-# Flag a task
-of modify abc123 --flagged
-
-# Unflag a task
-of modify abc123 --unflagged
-
-# Rename task
-of modify abc123 --name "Updated task name"
-
-# Move to first position in project
-of modify abc123 --order 0
-
-# Multiple changes
-of modify abc123 --due tomorrow --flagged --tag "Urgent"
+of modify abc123 --due tomorrow
+of modify abc123 --name "Updated task name" --flag
+of modify abc123 --project "Work" --tag "Urgent"
+of modify abc123 --due "" --defer ""   # Clear dates
+of modify abc123 --due-by "+3d"        # Extend due by 3 days
 ```
 
-### `of project modify <project-id>`
+### `of flag <taskIds...>`
 
-Update an existing project.
+Flag task(s).
 
-**Options:**
+```bash
+of flag abc123                         # Flag single task
+of flag abc123 def456 ghi789           # Flag multiple tasks
+of list inbox -q | xargs of flag       # Flag all inbox tasks
+```
+
+### `of unflag <taskIds...>`
+
+Remove flag from task(s).
+
+```bash
+of unflag abc123
+of list flagged -q | xargs of unflag   # Unflag all flagged tasks
+```
+
+### `of reorder <taskId>`
+
+Reorder a task within its project.
 
 | Option | Description |
 |--------|-------------|
-| `--name "<text>"` | Rename project |
-| `--status "<status>"` | Set status: `active`, `on-hold`, `completed`, `dropped` |
-| `--folder "<name>"` | Move to folder |
-| `--due "<date>"` | Change due date |
-| `--review "<interval>"` | Change review interval |
-
-**Examples:**
+| `--top` | Move to first position |
+| `--bottom` | Move to last position |
+| `--before <targetId>` | Move before another task |
+| `--after <targetId>` | Move after another task |
+| `--dry-run` | Preview without reordering |
 
 ```bash
-# Put project on hold
-of project modify proj123 --status on-hold
-
-# Reactivate project
-of project modify proj123 --status active
-
-# Move project to folder
-of project modify proj123 --folder "Archive"
-
-# Rename project
-of project modify proj123 --name "New Project Name"
+of reorder abc123 --top                  # Move to first position
+of reorder abc123 --bottom               # Move to last position
+of reorder abc123 --before def456        # Move before another task
+of reorder abc123 --after def456         # Move after another task
 ```
 
 ---
 
-## Complete Commands
+## Complete/Drop/Delete Commands
 
-### `of complete <task-id>`
+### `of complete <taskIds...>` (alias: `done`)
 
-Mark a task as complete.
+Mark task(s) as complete.
 
 ```bash
-# Complete a task
-of complete abc123
-
-# Complete multiple tasks
-of complete abc123 def456 ghi789
+of complete abc123                     # Complete single task
+of complete abc123 def456 ghi789       # Complete multiple tasks
+of done abc123                         # Using alias
+of list inbox -q | xargs of complete   # Complete all inbox tasks
 ```
 
-### `of complete <task-id> --drop`
+### `of drop <taskIds...>`
 
-Drop a task (mark as abandoned, not completed).
+Drop task(s) (mark as abandoned, not completed).
 
 ```bash
-of complete abc123 --drop
+of drop abc123
+of drop abc123 def456
 ```
 
-### `of complete <task-id> --delete`
+### `of delete <taskIds...>` (alias: `rm`)
 
-Permanently delete a task.
+Permanently delete task(s).
 
 ```bash
-of complete abc123 --delete
+of delete abc123
+of rm abc123 def456                    # Using alias
 ```
 
-### Bulk Complete
+---
+
+## Project Commands
+
+### `of project complete <nameOrId>` (alias: `proj done`)
+
+Mark project as complete.
 
 ```bash
-# Complete all inbox tasks
-of list inbox -q | xargs -I {} of complete {}
+of project complete "My Project"       # Complete by name
+of proj done abc123                    # Complete by ID
+```
 
-# Complete all flagged tasks
-of list flagged -q | xargs -I {} of complete {}
+### `of project drop <nameOrId>`
 
-# Complete with confirmation (one by one)
-of list inbox -q | while read id; do
-  of get task "$id"
-  read -p "Complete? (y/n) " confirm
-  [[ $confirm == "y" ]] && of complete "$id"
-done
+Mark project as dropped.
+
+```bash
+of project drop "Old Project"
+```
+
+### `of project hold <nameOrId>` (alias: `pause`)
+
+Put project on hold.
+
+```bash
+of project hold "Paused Project"
+of proj pause "Work"                   # Using alias
+```
+
+### `of project activate <nameOrId>` (alias: `resume`)
+
+Resume an on-hold project.
+
+```bash
+of project activate "Paused Project"
+of proj resume "Work"
+```
+
+### `of project review <nameOrId>`
+
+Mark project as reviewed.
+
+```bash
+of project review "Work"
+```
+
+### `of project modify <nameOrId>` (alias: `proj mod`)
+
+Modify project properties.
+
+| Option | Description |
+|--------|-------------|
+| `--name <name>` | Rename project |
+| `-n, --note <text>` | Set project note |
+| `-d, --due <date>` | Set due date |
+| `--defer <date>` | Set defer date |
+| `--clear-due` | Clear due date |
+| `--clear-defer` | Clear defer date |
+| `--review-interval <interval>` | Set review cadence: `<n><d\|w\|m\|y>` (e.g. `1w`, `2m`) |
+| `-f, --flag` | Flag project |
+| `--unflag` | Unflag project |
+| `--sequential` | Set to sequential |
+| `--parallel` | Set to parallel |
+| `-t, --tag <name>` | Set primary tag |
+| `--status <status>` | Set status (active, on-hold, dropped) |
+| `--dry-run` | Preview without modifying |
+
+```bash
+of project modify "My Project" --name "Renamed Project"
+of project modify "Work" --due "+7d" --flag
+of project modify "Paused" --status active
+of project modify "SUPERNOVA" --review-interval 1w   # drives `of review`
+of project modify "SUPERNOVA" --tag ""               # clear the primary tag
 ```
 
 ---
 
 ## Organization Commands
 
-### `of folder add "<name>"`
+### `of folder add <name>` (alias: `create`)
 
 Create a new folder.
 
-```bash
-# Create folder
-of folder add "Personal Projects"
-
-# Create nested folder (if supported)
-of folder add "Q1" --parent "2026"
-```
-
-### `of tag add "<name>"`
-
-Create a new tag.
+| Option | Description |
+|--------|-------------|
+| `-p, --parent <name>` | Parent folder (default: root) |
+| `--dry-run` | Preview without creating |
 
 ```bash
-# Create tag
-of tag add "Waiting For"
-
-# Create nested tag
-of tag add "Home" --parent "Contexts"
+of folder add "Work"
+of folder add "Clients" --parent "Work"
 ```
 
-### `of project move <project-id>`
+### `of folder modify <nameOrId>` (alias: `mod`)
+
+Modify an existing folder.
+
+| Option | Description |
+|--------|-------------|
+| `--name <name>` | Rename folder |
+| `--note <text>` | Set folder note |
+| `--hidden` | Hide folder |
+| `--visible` | Show folder |
+
+```bash
+of folder modify "Work" --name "Career"
+of folder modify "Personal" --hidden
+```
+
+### `of move <projectNameOrId>`
 
 Move a project to a different folder.
 
+| Option | Description |
+|--------|-------------|
+| `-f, --folder <name>` | Target folder (omit for root) |
+| `--dry-run` | Preview without moving |
+
 ```bash
-of project move proj123 --folder "Archive"
+of move "My Project" --folder "Work"
+of move "Old Project" --folder ""        # Move to root
 ```
 
-### `of review`
+### `of tag add <name>` (alias: `create`)
 
-List projects due for review.
+Create a new tag.
+
+| Option | Description |
+|--------|-------------|
+| `-p, --parent <name>` | Parent tag for nesting |
+| `--no-next-action` | Disable next action (like "Waiting" tag) |
+| `--dry-run` | Preview without creating |
 
 ```bash
-# Show projects needing review
-of review
+of tag add "Work"
+of tag add "Errands" --parent "Personal"
+of tag add "Waiting" --no-next-action
+```
 
-# JSON output
-of review --json
+### `of tag modify <nameOrId>` (alias: `mod`)
 
-# Mark project as reviewed
-of review mark proj123
+Modify an existing tag.
+
+| Option | Description |
+|--------|-------------|
+| `--name <name>` | Rename tag |
+| `--hidden` | Hide tag |
+| `--visible` | Show tag |
+| `--allows-next` | Enable next action |
+| `--no-allows-next` | Disable next action |
+
+```bash
+of tag modify "Work" --name "Career"
+of tag modify "Waiting" --no-allows-next
+```
+
+### `of tag delete <nameOrId>` (alias: `rm`)
+
+Delete a tag.
+
+```bash
+of tag delete "Old Tag"
+```
+
+### `of tag tasks <nameOrId>` (alias: `list`)
+
+List tasks with a specific tag.
+
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-a, --all` | Include completed tasks |
+
+```bash
+of tag tasks "Work"
+of tag tasks "Urgent" --limit 10
+of tag list "Review" --all --json
 ```
 
 ---
@@ -466,42 +609,104 @@ Trigger OmniFocus sync.
 of sync
 ```
 
-### `of get task <id>`
+### `of review`
+
+List projects due for review.
+
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 50) |
+| `-a, --all` | Include all active projects |
+
+```bash
+of review                        # List projects due for review
+of review --all                  # List all projects with review status
+of review --json --limit 10      # JSON output with limit
+```
+
+### `of get task <id>` (alias: `t`)
 
 Get detailed information about a task.
 
 ```bash
-# Human readable
-of get task abc123
-
-# JSON output
-of get task abc123 --json
+of get task abc123               # Human readable
+of get t abc123 --json           # JSON output
 ```
 
-### `of get project <id>`
+### `of get project <nameOrId>` (alias: `p`)
 
 Get detailed information about a project.
 
 ```bash
-of get project proj123 --json
+of get project "Work"            # Get by name
+of get p abc123                  # Get by ID
 ```
 
-### `of search "<query>"`
+### `of get project-tasks <nameOrId>` (alias: `pt`)
 
-Search for tasks by name/note content.
+List tasks in a project.
+
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 100) |
+| `-a, --all` | Include completed tasks |
 
 ```bash
-# Basic search
-of search "meeting"
+of get project-tasks "Work"
+of get pt "Work" --all
+of get pt "Work" -q | xargs of flag    # Flag all tasks in project
+```
 
-# Limit results
-of search "report" --limit 10
+### `of search [query]` (alias: `s`)
 
-# JSON output
-of search "client" --json
+Search for tasks by name, note, or filters.
 
-# Search in specific project
-of search "review" --project "Work"
+| Option | Description |
+|--------|-------------|
+| `-l, --limit <n>` | Maximum results (default: 50) |
+| `-a, --all` | Include completed tasks |
+| `-p, --project <name>` | Filter by project |
+| `-t, --tag <name>` | Filter by tag |
+| `-f, --flagged` | Only flagged tasks |
+| `--available` | Only available tasks |
+| `--due-before <date>` | Due before date |
+| `--due-after <date>` | Due after date |
+
+```bash
+of search "meeting"                           # Text search
+of search --project "Work"                    # All tasks in project
+of search --tag "Urgent" --flagged            # Urgent flagged tasks
+of search --due-before "tomorrow"             # Due soon
+of search "report" --project "Q1" --tag "Review"  # Combined filters
+of search --available --limit 20              # Next available tasks
+```
+
+### `of qe [name]` (alias: `quick-entry`)
+
+Open Quick Entry panel (optionally with task).
+
+| Option | Description |
+|--------|-------------|
+| `-n, --note <text>` | Task note |
+| `-d, --due <date>` | Due date |
+| `--defer <date>` | Defer date |
+| `-f, --flagged` | Mark as flagged |
+| `--save` | Auto-save the task |
+
+```bash
+of qe                               # Just open Quick Entry
+of qe "New task"                    # Open with task pre-filled
+of qe "Urgent task" --flagged       # Flagged task
+of qe "Due task" --due tomorrow --save  # Create and save
+```
+
+### `of perspectives` (alias: `persp`)
+
+List available perspectives.
+
+```bash
+of perspectives                     # List all perspectives
+of persp --json                     # JSON output
 ```
 
 ### `of completion <shell>`
@@ -509,14 +714,8 @@ of search "review" --project "Work"
 Generate shell completion scripts.
 
 ```bash
-# Bash
 of completion bash >> ~/.bashrc
-
-# Zsh
 of completion zsh >> ~/.zshrc
-
-# Fish
-of completion fish >> ~/.config/fish/completions/of.fish
 ```
 
 ---
@@ -557,7 +756,7 @@ of review
 of list forecast --days 14
 
 # Stale flagged items
-of list flagged --json | jq '.[] | select(.dueDate == null)'
+of list flagged --json | jq '.tasks[] | select(.dueDate == null)'
 ```
 
 ### Batch Create from Template
@@ -571,31 +770,6 @@ of list flagged --json | jq '.[] | select(.dueDate == null)'
 
 CLIENT="Acme Corp"
 sed "s/{{CLIENT}}/$CLIENT/g" template.txt | of add batch --folder "Clients"
-```
-
-### Export Tasks to JSON
-
-```bash
-# Export inbox to file
-of list inbox --json --pretty > inbox-backup.json
-
-# Export all projects
-of list projects --json --pretty > projects.json
-```
-
-### Integrate with Other Tools
-
-```bash
-# Create task from clipboard
-pbpaste | of add --project "Inbox"
-
-# Create task from selection (macOS)
-osascript -e 'tell application "System Events" to keystroke "c" using command down'
-sleep 0.1
-pbpaste | of add
-
-# Send completed tasks to a log file
-of list today --all --json | jq '.[] | select(.completed == true)' >> ~/completed-log.json
 ```
 
 ---
@@ -613,28 +787,29 @@ Common errors and solutions:
 
 ---
 
-## Tips
-
-1. **Use `-q` for scripting** — Returns only IDs, perfect for piping
-2. **Use `--json` for parsing** — Structured data for `jq` processing
-3. **Relative dates** — `+3d`, `+1w`, `tomorrow`, `next monday`
-4. **Dry run** — Add `--dry-run` to preview changes without executing
-5. **Combine with Unix tools** — `grep`, `xargs`, `jq`, `wc` all work great
-
----
-
 ## Quick Reference Card
 
 ```
 LIST:     of list inbox|today|flagged|projects|folders|tags|forecast
+          of ls i|p|f|t (aliases)
 ADD:      of add "task" [--project X] [--due DATE] [--tag X] [--flagged]
-QUICK:    of quick "task"
-MODIFY:   of modify <id> [--due DATE] [--project X] [--flagged]
-COMPLETE: of complete <id> [--drop|--delete]
-SEARCH:   of search "query" [--limit N]
+          of add project "name" [--folder X] [--tasks "a,b,c"]
+          of add batch < outline.md
+QUICK:    of quick "task" (shortcut for inbox)
+MODIFY:   of modify <id> [--due DATE] [--project X] [--flag]
+FLAG:     of flag <id>... | of unflag <id>...
+REORDER:  of reorder <id> --top|--bottom|--before|--after <target>
+COMPLETE: of complete <id>... | of drop <id>... | of delete <id>...
+PROJECT:  of project complete|drop|hold|activate|review|modify <nameOrId>
+FOLDER:   of folder add|modify <name>
+TAG:      of tag add|modify|delete|tasks <name>
+MOVE:     of move <project> --folder <folder>
+SEARCH:   of search "query" [--project X] [--tag X] [--flagged]
+GET:      of get task|project|project-tasks <id>
+REVIEW:   of review [--all]
 SYNC:     of sync
-GET:      of get task|project <id>
+QE:       of qe [name] [--save]
 
-FLAGS:    --json  --pretty  --quiet/-q  --limit N  --all
-DATES:    today  tomorrow  +3d  +1w  2026-01-15  "next monday"
+FLAGS:    --json  --pretty  --quiet/-q  --limit N  --all  --dry-run
+DATES:    today  tomorrow  +3d  +1w  2026-01-15  "next week"
 ```
