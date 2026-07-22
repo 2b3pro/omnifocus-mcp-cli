@@ -407,6 +407,19 @@ Modify an existing folder.
 - `--hidden` (boolean): Hide folder
 - `--visible` (boolean): Show folder
 
+
+### `of folder delete`
+
+Delete folder(s). Deletes every project, task and subfolder inside, permanently.
+
+Args: `nameOrIds...` (one or more folder names or IDs)
+
+- `--force` (boolean): Delete even if the folder is non-empty
+- `--dry-run` (boolean): Preview, reporting contents, without deleting
+
+Empty folders delete directly; non-empty ones are refused unless `--force`.
+A refused delete removes nothing.
+
 ### `of tag add`
 
 Create a new tag.

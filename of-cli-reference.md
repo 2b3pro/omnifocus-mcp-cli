@@ -527,6 +527,28 @@ of folder modify "Work" --name "Career"
 of folder modify "Personal" --hidden
 ```
 
+
+### `of folder delete <nameOrIds...>` (alias: `rm`)
+
+Delete folder(s). **Deleting a folder also deletes every project, task and
+subfolder inside it, permanently.**
+
+| Option | Description |
+|--------|-------------|
+| `--force` | Delete even if the folder contains projects or subfolders |
+| `--dry-run` | Preview what would be deleted, including a count of its contents |
+
+An empty folder deletes directly. A non-empty one is **refused** unless
+`--force` is given, and the refusal reports exactly what it holds. A refused
+delete removes nothing.
+
+```bash
+of folder delete "Old Folder"           # only if empty
+of folder delete "Archive" --dry-run    # inspect contents first
+of folder delete "Archive" --force      # delete it and everything inside
+of folder rm "A" "B"                    # several at once
+```
+
 ### `of move <projectNameOrId>`
 
 Move a project to a different folder.
