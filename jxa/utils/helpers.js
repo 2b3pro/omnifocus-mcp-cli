@@ -445,9 +445,19 @@ function firstWhere(collection, criteria) {
   try {
     const matches = collection.whose(criteria);
     if (!matches || matches.length === 0) return null;
-    const first = matches[0];
-    first.id();          // force resolution; throws if the specifier is stale
-    return first;
+
+    // CRITICAL: whose() returns a live FILTER, not a stable reference. Every
+    // property access re-evaluates the predicate, so the moment a caller
+    // mutates the filtered property the reference dies:
+    //
+    //   const t = tags.whose({name: "old"})[0];
+    //   t.name = "new";      // succeeds
+    //   t.name();            // throws "Invalid index." — nothing matches "old" now
+    //
+    // That regressed `tag modify --name` and `folder modify --name`. Re-anchor
+    // to a by-ID reference, which survives renames and any other mutation.
+    const id = matches[0].id();
+    return collection.byId(id);
   } catch {
     return null;
   }
