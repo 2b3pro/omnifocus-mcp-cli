@@ -61,6 +61,78 @@ function getDoc(app) {
 /**
  * Format task for JSON output
  */
+/**
+ * Format a whole task COLLECTION for JSON output — bulk property fetch.
+ *
+ * Why this exists: in JXA every property read on a single object is one Apple
+ * Event round-trip, measured at ~17ms against OmniFocus 4.8.12. formatTask()
+ * reads 14 properties, so formatting N tasks one at a time costs N * 14 * 17ms
+ * — about 156 seconds for a 766-task database. Asking the COLLECTION for a
+ * property (`tasks.name()`) is a single Apple Event returning an array, ~15-130ms
+ * regardless of N. Same data, ~380x less wall clock.
+ *
+ * Takes a JXA collection (e.g. doc.flattenedTasks, or the result of .whose()),
+ * NOT an array of task objects — the speedup comes from the collection itself
+ * resolving each property in one call. Returns objects identical in shape to
+ * formatTask(), so callers and their consumers are unaffected.
+ *
+ * Each property is fetched independently: a property unsupported by the running
+ * OmniFocus (plannedDate on older versions) degrades to nulls for every row
+ * rather than failing the batch.
+ */
+function formatTasksBulk(collection) {
+  const col = (fn, fallback) => {
+    try {
+      const v = fn();
+      return Array.isArray(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const ids = col(() => collection.id());
+  if (!ids) return [];   // can't identify rows; caller should fall back
+  const n = ids.length;
+  const blank = () => new Array(n).fill(null);
+
+  const names = col(() => collection.name()) || blank();
+  const notes = col(() => collection.note()) || blank();
+  const completed = col(() => collection.completed()) || blank();
+  const flagged = col(() => collection.flagged()) || blank();
+  const defer = col(() => collection.deferDate()) || blank();
+  const planned = col(() => collection.plannedDate()) || blank();
+  const due = col(() => collection.dueDate()) || blank();
+  const completion = col(() => collection.completionDate()) || blank();
+  const estimates = col(() => collection.estimatedMinutes()) || blank();
+  const inInbox = col(() => collection.inInbox()) || blank();
+  const blocked = col(() => collection.blocked()) || blank();
+  const projNames = col(() => collection.containingProject.name()) || blank();
+  const tagNames = col(() => collection.tags.name()) || blank();
+
+  const iso = (d) => (d ? new Date(d).toISOString() : null);
+
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    out[i] = {
+      id: ids[i],
+      name: names[i],
+      note: notes[i] || "",
+      completed: completed[i],
+      flagged: flagged[i],
+      deferDate: iso(defer[i]),
+      plannedDate: iso(planned[i]),
+      dueDate: iso(due[i]),
+      completionDate: iso(completion[i]),
+      estimatedMinutes: estimates[i] || null,
+      inInbox: inInbox[i],
+      blocked: blocked[i],
+      tags: Array.isArray(tagNames[i]) ? tagNames[i] : [],
+      projectName: projNames[i] === undefined ? null : projNames[i]
+    };
+  }
+  return out;
+}
+
 function formatTask(task) {
   try {
     const tags = [];
