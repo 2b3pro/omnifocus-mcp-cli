@@ -23,6 +23,7 @@
       if (opts.note !== undefined) changes.note = { from: current.note, to: opts.note };
       if (opts.dueDate !== undefined) changes.dueDate = { from: current.dueDate, to: opts.dueDate };
       if (opts.deferDate !== undefined) changes.deferDate = { from: current.deferDate, to: opts.deferDate };
+      if (opts.plannedDate !== undefined) changes.plannedDate = { from: current.plannedDate, to: opts.plannedDate };
       if (opts.flagged !== undefined) changes.flagged = { from: current.flagged, to: opts.flagged };
       if (opts.tag !== undefined) changes.tag = { to: opts.tag };
       if (opts.project !== undefined) changes.project = { to: opts.project };
@@ -91,6 +92,31 @@
         else if (unit === 'w') newDate.setDate(newDate.getDate() + amount * 7);
         else if (unit === 'm') newDate.setMonth(newDate.getMonth() + amount);
         task.deferDate = newDate;
+      }
+    }
+
+    // Planned date — "the date at which work for this task is intended".
+    // Distinct from defer (when it becomes available) and due (deadline).
+    if (opts.plannedDate !== undefined) {
+      if (opts.plannedDate === null || opts.plannedDate === "") {
+        task.plannedDate = null;
+      } else {
+        const planned = parseDate(opts.plannedDate);
+        if (planned) task.plannedDate = planned;
+      }
+    }
+
+    if (opts.plannedBy) {
+      const current = task.plannedDate() || new Date();
+      const match = opts.plannedBy.match(/^([+-]?\d+)([dwm])$/);
+      if (match) {
+        const amount = parseInt(match[1], 10);
+        const unit = match[2];
+        const newDate = new Date(current);
+        if (unit === 'd') newDate.setDate(newDate.getDate() + amount);
+        else if (unit === 'w') newDate.setDate(newDate.getDate() + amount * 7);
+        else if (unit === 'm') newDate.setMonth(newDate.getMonth() + amount);
+        task.plannedDate = newDate;
       }
     }
 

@@ -649,6 +649,52 @@ describe('Phase 9: Modify & Relative Dates', { timeout: TIMEOUT * 3 }, () => {
     assert.ok(result.success, 'Should succeed');
   });
 
+  // Planned date — OmniFocus's "date at which work is intended", distinct from
+  // defer (when it becomes available) and due (deadline). These assert the
+  // round-tripped VALUE, not just result.success, so they can actually fail.
+
+  it('should set planned date at creation and read it back', async () => {
+    const name = uniqueName('Planned_Create');
+    const created = await runCliJson(`add task "${name}" --planned "2030-03-15"`);
+    createdItems.tasks.push(created.id);
+    const got = await runCliJson(`get task "${created.id}"`);
+    assert.ok(got.task.plannedDate, 'plannedDate should be populated');
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-03-15');
+  });
+
+  it('should set planned date via modify and read it back', async () => {
+    const result = await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${testTaskId}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-01');
+  });
+
+  it('should adjust planned date relatively with --planned-by', async () => {
+    await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
+    const result = await runCliJson(`modify "${testTaskId}" --planned-by "+1w"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${testTaskId}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-06-08', '+1w should advance exactly 7 days');
+  });
+
+  it('should clear planned date with empty string', async () => {
+    await runCliJson(`modify "${testTaskId}" --planned "2030-06-01"`);
+    const result = await runCliJson(`modify "${testTaskId}" --planned ""`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${testTaskId}"`);
+    assert.strictEqual(got.task.plannedDate, null, 'plannedDate should be cleared to null');
+  });
+
+  it('should keep planned, defer and due independent of one another', async () => {
+    const name = uniqueName('Planned_Independent');
+    const created = await runCliJson(`add task "${name}" --planned "2030-04-01" --defer "2030-03-01" --due "2030-05-01"`);
+    createdItems.tasks.push(created.id);
+    const got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.plannedDate.slice(0, 10), '2030-04-01', 'planned unchanged by defer/due');
+    assert.strictEqual(got.task.deferDate.slice(0, 10), '2030-03-01', 'defer unchanged by planned');
+    assert.strictEqual(got.task.dueDate.slice(0, 10), '2030-05-01', 'due unchanged by planned');
+  });
+
   it('should flag and unflag task', async () => {
     await runCliJson(`modify "${testTaskId}" --flag`);
     let task = await runCliJson(`get task "${testTaskId}"`);
@@ -780,6 +826,48 @@ describe('Phase 11: Review Workflow', { timeout: TIMEOUT * 2 }, () => {
     const result = await runCliJson('review --limit 5');
     const projects = result.projects || result;
     assert.ok(projects.length <= 5 || result.totalCount !== undefined, 'Should respect limit');
+  });
+
+  // Review interval — the cadence that drives which projects appear above.
+  // Stored by OmniFocus as a repetition record {unit, steps, fixed}.
+
+  it('should set and read back a review interval', async () => {
+    const name = uniqueName('ReviewInterval_Project');
+    await runCliJson(`add project "${name}"`);
+    createdItems.projects.push(name);
+
+    const result = await runCliJson(`project modify "${name}" --review-interval 2m`);
+    assert.ok(result.success, 'Should succeed');
+
+    const got = await runCliJson(`get project "${name}"`);
+    assert.strictEqual(got.project.reviewInterval.unit, 'month');
+    assert.strictEqual(got.project.reviewInterval.steps, 2);
+  });
+
+  it('should preserve the fixed flag when only the cadence changes', async () => {
+    const name = uniqueName('ReviewFixed_Project');
+    await runCliJson(`add project "${name}"`);
+    createdItems.projects.push(name);
+
+    const before = await runCliJson(`get project "${name}"`);
+    const fixedBefore = before.project.reviewInterval?.fixed;
+
+    await runCliJson(`project modify "${name}" --review-interval 3w`);
+    const after = await runCliJson(`get project "${name}"`);
+
+    assert.strictEqual(after.project.reviewInterval.unit, 'week');
+    assert.strictEqual(after.project.reviewInterval.steps, 3);
+    assert.strictEqual(after.project.reviewInterval.fixed, fixedBefore, 'fixed/sliding behavior must not silently flip');
+  });
+
+  it('should reject a malformed review interval instead of silently ignoring it', async () => {
+    const name = uniqueName('ReviewBad_Project');
+    await runCliJson(`add project "${name}"`);
+    createdItems.projects.push(name);
+
+    const result = await runCliJson(`project modify "${name}" --review-interval "fortnight"`);
+    assert.strictEqual(result.success, false, 'Should fail loudly, not no-op');
+    assert.ok(/Invalid review interval/.test(result.error), 'Should explain the expected format');
   });
 
   it('should mark project as reviewed via project command', async () => {

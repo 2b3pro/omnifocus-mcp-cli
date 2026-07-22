@@ -106,6 +106,7 @@ export function registerAddCommand(program) {
     .option('-n, --note <text>', 'Task note')
     .option('-d, --due <date>', 'Due date (today, tomorrow, +3d, 2024-01-15)')
     .option('--defer <date>', 'Defer/start date')
+    .option('--planned <date>', 'Planned date — when work is intended')
     .option('-f, --flagged', 'Mark as flagged')
     .option('-t, --tag <name>', 'Add primary tag')
     .option('--tags <names>', 'Add multiple tags (comma-separated)')
@@ -139,6 +140,7 @@ Examples:
             note: options.note || null,
             dueDate: options.due || null,
             deferDate: options.defer || null,
+            plannedDate: options.planned || null,
             flagged: options.flagged || false,
             tag: options.tag || null,
             tags: options.tags ? options.tags.split(',').map(t => t.trim()) : null,
@@ -155,6 +157,7 @@ Examples:
             note: options.note || null,
             dueDate: options.due || null,
             deferDate: options.defer || null,
+            plannedDate: options.planned || null,
             flagged: options.flagged || false,
             tag: options.tag || null,
             tags: options.tags ? options.tags.split(',').map(t => t.trim()) : null,
