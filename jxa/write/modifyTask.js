@@ -134,8 +134,25 @@
         // Move to inbox - this is complex, skip for now
       } else {
         const project = findProject(doc, opts.project);
-        if (project) {
-          app.move(task, { to: project.rootTask.tasks.end });
+        if (!project) {
+          return JSON.stringify({ success: false, error: "Project not found: " + opts.project });
+        }
+        // JXA cannot file a task into a project: app.move() into the project's
+        // root task fails with "Attempted to move data objects to a nil
+        // container", and setting assignedContainer alone doesn't file it.
+        // Route the move through Omni Automation's moveTasks() instead.
+        const moveResult = app.evaluateJavascript(
+          "(() => {" +
+          " const p = Project.byIdentifier(" + JSON.stringify(project.id()) + ");" +
+          " if (!p) return 'ERR: project not found';" +
+          " const t = Task.byIdentifier(" + JSON.stringify(taskId) + ");" +
+          " if (!t) return 'ERR: task not found';" +
+          " moveTasks([t], p);" +
+          " return 'OK';" +
+          "})()"
+        );
+        if (moveResult !== "OK") {
+          return JSON.stringify({ success: false, error: "Move to project failed: " + moveResult });
         }
       }
     }

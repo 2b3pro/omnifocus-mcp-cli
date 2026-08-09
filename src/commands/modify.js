@@ -62,6 +62,11 @@ Examples:
         opts.dryRun = options.dryRun || false;
         const result = await runJxa('write', 'modifyTask', [taskId, JSON.stringify(opts)]);
         print(result, options);
+        // runJxa reports script failures as { success: false } instead of
+        // throwing — without this the command printed the error yet exited 0.
+        if (!result || result.success === false) {
+          process.exit(1);
+        }
       } catch (err) {
         printError(err.message);
         process.exit(1);
