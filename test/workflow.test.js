@@ -1122,61 +1122,104 @@ describe('Phase 14: Error Handling', { timeout: TIMEOUT }, () => {
 
 describe('Phase 15: Cleanup', { timeout: TIMEOUT * 5 }, () => {
 
-  it('should delete test tasks', async () => {
-    if (createdItems.tasks.length === 0) {
-      assert.ok(true, 'No tasks to clean up');
-      return;
-    }
+  // Cleanup used to `catch {}` every failure and then `assert.ok(true)`, so it
+  // could fail completely and still report green — which is how 68 tasks and 37
+  // projects accumulated in a live database. Failures are collected and asserted
+  // now, and projects are DELETED rather than dropped (dropping leaves them and
+  // all their tasks in place forever).
+  //
+  // Deletions are batched: `delete`, `project delete` and `folder delete` all
+  // take a variadic id list, so one process handles many items. Spawning `of`
+  // per item cost ~1-2s each and pushed this phase past its timeout.
 
-    let deleted = 0;
-    for (const taskId of createdItems.tasks) {
+  const CHUNK = 50;   // keep argv well clear of the shell's limit
+
+  async function deleteBatched(command, ids, suffix = '') {
+    const failures = [];
+    for (let i = 0; i < ids.length; i += CHUNK) {
+      const chunk = ids.slice(i, i + CHUNK).map(id => `"${id}"`).join(' ');
       try {
-        await runCli(`delete "${taskId}"`);
-        deleted++;
-      } catch {
-        // Already deleted or completed
+        await runCli(`${command} ${chunk}${suffix}`);
+      } catch (e) {
+        failures.push(`${command} [${ids.slice(i, i + CHUNK).length} items]: ${e.message}`);
       }
     }
-    console.log(`  Cleaned up ${deleted}/${createdItems.tasks.length} tasks`);
-    assert.ok(true, 'Cleanup attempted');
+    return failures;
+  }
+
+  it('should delete test tasks', async () => {
+    const failures = await deleteBatched('delete', createdItems.tasks);
+    assert.deepStrictEqual(failures, [], `Task cleanup failed: ${failures.join('; ')}`);
   });
 
-  it('should drop/complete test projects', async () => {
-    if (createdItems.projects.length === 0) {
-      assert.ok(true, 'No projects to clean up');
-      return;
-    }
+  it('should delete test projects', async () => {
+    // --force: a test project legitimately holds tasks, and they go with it.
+    const failures = await deleteBatched('project delete', createdItems.projects, ' --force');
+    assert.deepStrictEqual(failures, [], `Project cleanup failed: ${failures.join('; ')}`);
+  });
 
-    let cleaned = 0;
-    for (const projectId of createdItems.projects) {
-      try {
-        await runCli(`project drop "${projectId}"`);
-        cleaned++;
-      } catch {
-        // Already dropped
-      }
-    }
-    console.log(`  Cleaned up ${cleaned}/${createdItems.projects.length} projects`);
-    assert.ok(true, 'Cleanup attempted');
+  it('should delete test folders', async () => {
+    const failures = await deleteBatched('folder delete', createdItems.folders, ' --force');
+    assert.deepStrictEqual(failures, [], `Folder cleanup failed: ${failures.join('; ')}`);
   });
 
   it('should delete test tags', async () => {
-    if (createdItems.tags.length === 0) {
-      assert.ok(true, 'No tags to clean up');
-      return;
-    }
-
-    let deleted = 0;
+    // `tag delete` takes a single tag, so this one still loops.
+    const failures = [];
     for (const tagId of createdItems.tags) {
       try {
         await runCli(`tag delete "${tagId}"`);
-        deleted++;
-      } catch {
-        // Already deleted
+      } catch (e) {
+        failures.push(`${tagId}: ${e.message}`);
       }
     }
-    console.log(`  Cleaned up ${deleted}/${createdItems.tags.length} tags`);
-    assert.ok(true, 'Cleanup attempted');
+    assert.deepStrictEqual(failures, [], `Tag cleanup failed: ${failures.join('; ')}`);
+  });
+
+  it('should leave no CLI_Test_ items behind', async () => {
+    // Tracked-id cleanup only reaches what a test remembered to register. This
+    // sweeps by name prefix so anything created and forgotten is still removed,
+    // then asserts the database is actually clean rather than assuming it.
+    //
+    // --all on every enumeration: completed projects report 'done status' and
+    // completed tasks are hidden from search by default, which is precisely
+    // where residue collects. Without it this assertion passes on an empty set.
+    const named = (list, key) => (list && list[key] ? list[key] : [])
+      .filter(x => x.name && x.name.startsWith(TEST_PREFIX));
+
+    // `search --all` walks every task including completed ones and takes ~20-40s
+    // on a real database — well past the default per-command TIMEOUT. This is a
+    // known slow path, not a hang, so give the enumerations room rather than
+    // failing cleanup on a timeout.
+    const SLOW = { timeout: TIMEOUT * 4 };
+
+    const sweep = async () => {
+      const projects = named(await runCliJson('list projects --all --limit 500', SLOW), 'projects');
+      await deleteBatched('project delete', projects.map(p => p.id), ' --force');
+
+      const tasks = named(await runCliJson(`search "${TEST_PREFIX}" --all --limit 500`, SLOW), 'tasks');
+      await deleteBatched('delete', tasks.map(t => t.id));
+
+      const folders = named(await runCliJson('list folders --limit 500'), 'folders');
+      await deleteBatched('folder delete', folders.map(f => f.id), ' --force');
+
+      for (const g of named(await runCliJson('list tags --limit 500'), 'tags')) {
+        try { await runCli(`tag delete "${g.id}"`); } catch {}
+      }
+    };
+
+    await sweep();
+
+    // Every entity type the suite can create is checked. Tags and folders were
+    // omitted at first and three tags survived a "passing" cleanup — an
+    // assertion that only looks where it already swept proves nothing.
+    const leftover = [
+      ...named(await runCliJson(`search "${TEST_PREFIX}" --all --limit 500`, SLOW), 'tasks').map(t => `task:${t.name}`),
+      ...named(await runCliJson('list projects --all --limit 500', SLOW), 'projects').map(p => `project:${p.name}`),
+      ...named(await runCliJson('list folders --limit 500'), 'folders').map(f => `folder:${f.name}`),
+      ...named(await runCliJson('list tags --limit 500'), 'tags').map(g => `tag:${g.name}`)
+    ];
+    assert.deepStrictEqual(leftover, [], `Test data left in the database: ${leftover.join(', ')}`);
   });
 
 });

@@ -10,6 +10,16 @@
       return JSON.stringify({ success: false, error: "Task ID(s) required" });
     }
 
+    // Optional backdating. Accepts the same forms as every other date flag
+    // ("today", "-2d", ISO); an unparseable value is an error, not a silent now().
+    let completionDate = null;
+    if (opts.completionDate) {
+      completionDate = parseDate(opts.completionDate);
+      if (!completionDate) {
+        return JSON.stringify({ success: false, error: "Invalid completion date: " + opts.completionDate });
+      }
+    }
+
     const completed = [];
     const errors = [];
     const wouldComplete = [];
@@ -27,16 +37,21 @@
         wouldComplete.push({
           id: task.id(),
           name: task.name(),
-          alreadyCompleted: task.completed()
+          alreadyCompleted: task.completed(),
+          completionDate: completionDate ? completionDate.toISOString() : null
         });
         continue;
       }
 
       try {
-        app.markComplete(task);
+        // markComplete accepts an explicit completion date, so work finished
+        // earlier can be logged with the date it actually happened.
+        if (completionDate) app.markComplete(task, { completionDate: completionDate });
+        else app.markComplete(task);
         completed.push({
           id: task.id(),
-          name: task.name()
+          name: task.name(),
+          completionDate: task.completionDate() ? task.completionDate().toISOString() : null
         });
       } catch (e) {
         errors.push({ id: id, error: e.message });

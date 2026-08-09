@@ -12,6 +12,7 @@ export function registerCompleteCommand(program) {
     .command('complete <taskIds...>')
     .alias('done')
     .description('Mark task(s) as complete')
+    .option('--on <date>', 'Backdate the completion (today, -2d, or ISO) instead of stamping now')
     .option('--dry-run', 'Preview what would be completed without actually completing')
     .option('--json', 'Output as JSON')
     .option('--pretty', 'Pretty print JSON')
@@ -21,6 +22,7 @@ Examples:
   of complete abc123 def456 ghi789       # Complete multiple tasks
   of done abc123                         # Using alias
   of complete abc123 --dry-run           # Preview without completing
+  of complete abc123 --on -2d            # Log it as finished two days ago
 
   # Complete all tasks from a list:
   of list inbox -q | xargs of complete
@@ -30,7 +32,7 @@ Examples:
       try {
         await requireOmniFocus();
         const ids = taskIds.join(',');
-        const result = await runJxa('write', 'completeTask', [ids, JSON.stringify({ dryRun: options.dryRun || false })]);
+        const result = await runJxa('write', 'completeTask', [ids, JSON.stringify({ dryRun: options.dryRun || false, completionDate: options.on || null })]);
         print(result, options);
       } catch (err) {
         printError(err.message);

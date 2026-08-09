@@ -15,10 +15,20 @@
       ? formatTasksBriefBulk(collection)
       : formatTasksBulk(collection);
 
+    // Match OmniFocus's Flagged perspective: inherited flags count, and tasks that
+    // are only effectively completed/dropped (via their project) are excluded.
+    const eff = effectiveFlagsBulk(collection);
+
     const tasks = [];
     for (let i = 0; i < rows.length && tasks.length < limit; i++) {
-      if (!opts.includeCompleted && rows[i].completed) continue;
-      if (!rows[i].flagged) continue;
+      if (eff) {
+        if (!opts.includeCompleted && (eff.effCompleted[i] || eff.effDropped[i])) continue;
+        if (!eff.effFlagged[i]) continue;
+      } else {
+        // Bulk fetch unavailable — fall back to own properties rather than returning nothing.
+        if (!opts.includeCompleted && rows[i].completed) continue;
+        if (!rows[i].flagged) continue;
+      }
       tasks.push(rows[i]);
     }
 

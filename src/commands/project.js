@@ -68,6 +68,43 @@ Examples:
       }
     });
 
+  // Delete project(s) — permanent, unlike `drop` which only sets a status
+  project
+    .command('delete <nameOrIds...>')
+    .alias('rm')
+    .description('Delete project(s) permanently — refuses non-empty projects without --force')
+    .option('--force', 'Delete even if the project still contains tasks')
+    .option('--dry-run', 'Preview what would be deleted, including task counts')
+    .option('--json', 'Output as JSON')
+    .option('--pretty', 'Pretty print JSON')
+    .addHelpText('after', `
+'project drop' only marks a project dropped — it stays in your database with all
+its tasks. This removes it permanently, along with every task inside it.
+An empty project deletes directly; one holding tasks is refused unless you pass
+--force, and the refusal reports exactly how many tasks would go.
+
+Examples:
+  of project delete "Old Project"                # only if it has no tasks
+  of project delete "Old Project" --dry-run      # show what it holds first
+  of project delete "Old Project" --force        # delete it and its tasks
+  of project rm "A" "B"                          # several at once
+`)
+    .action(async (nameOrIds, options) => {
+      try {
+        await requireOmniFocus();
+        const opts = {
+          force: options.force || false,
+          dryRun: options.dryRun || false
+        };
+        // JSON array, not comma-joined: project NAMES may contain commas.
+        const result = await runJxa('write', 'deleteProject', [JSON.stringify(nameOrIds), JSON.stringify(opts)]);
+        print(result, options);
+      } catch (err) {
+        printError(err.message);
+        process.exit(1);
+      }
+    });
+
   // Hold project
   project
     .command('hold <nameOrId>')

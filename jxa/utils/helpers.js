@@ -112,7 +112,12 @@ function formatTasksBulk(collection) {
   const flagged = col(() => collection.flagged()) || blank();
   const defer = col(() => collection.deferDate()) || blank();
   const planned = col(() => collection.plannedDate()) || blank();
-  const due = col(() => collection.dueDate()) || blank();
+  // `dueDate` reports the effective date — the one OmniFocus itself shows, inherited
+  // from the containing project when the task has none. The brief formatter already
+  // did this; full mode read the own property, so the same task could show a date in
+  // --brief and null in --full. `ownDueDate` keeps the uninherited value available.
+  const due = col(() => collection.effectiveDueDate()) || blank();
+  const ownDue = col(() => collection.dueDate()) || blank();
   const completion = col(() => collection.completionDate()) || blank();
   const estimates = col(() => collection.estimatedMinutes()) || blank();
   const inInbox = col(() => collection.inInbox()) || blank();
@@ -133,6 +138,7 @@ function formatTasksBulk(collection) {
       deferDate: iso(defer[i]),
       plannedDate: iso(planned[i]),
       dueDate: iso(due[i]),
+      ownDueDate: iso(ownDue[i]),
       completionDate: iso(completion[i]),
       estimatedMinutes: estimates[i] || null,
       inInbox: inInbox[i],
@@ -232,6 +238,65 @@ function formatTask(task) {
   } catch (e) {
     return { id: task.id(), name: task.name(), error: e.message };
   }
+}
+
+
+/**
+ * Effective flag/completion state for a whole task collection, bulk-fetched.
+ *
+ * OmniFocus's Flagged perspective shows a task when it is flagged OR inherits a
+ * flag from its containing project OR from an ancestor task. The JXA dictionary
+ * has no `effectiveFlagged` property (unlike OmniJS), so the inheritance closure
+ * is resolved here from three bulk arrays — still one Apple Event per property
+ * for the entire collection, and measurably faster than dropping into OmniJS.
+ *
+ * Exclusion uses effectivelyCompleted/effectivelyDropped, not the own properties:
+ * a live task inside a dropped project is effectivelyDropped, and filtering on
+ * `dropped` alone leaks it into results. (These two exist in JXA but not OmniJS.)
+ *
+ * Verified to return exactly the same id set as OmniJS effectiveFlagged.
+ */
+function effectiveFlagsBulk(collection) {
+  const col = (fn) => {
+    try {
+      const v = fn();
+      return Array.isArray(v) ? v : null;
+    } catch {
+      return null;
+    }
+  };
+
+  const ids = col(() => collection.id());
+  if (!ids) return null;
+  const n = ids.length;
+  const blank = () => new Array(n).fill(false);
+  const sized = (v) => (v && v.length === n ? v : null);
+
+  const flagged = sized(col(() => collection.flagged())) || blank();
+  const effCompleted = sized(col(() => collection.effectivelyCompleted())) || blank();
+  const effDropped = sized(col(() => collection.effectivelyDropped())) || blank();
+  const projFlagged = sized(col(() => collection.containingProject.flagged()));
+  const parentIds = sized(col(() => collection.parentTask.id()));
+
+  const idx = {};
+  for (let i = 0; i < n; i++) idx[ids[i]] = i;
+
+  const memo = new Array(n).fill(undefined);
+  const resolve = (i, depth) => {
+    if (memo[i] !== undefined) return memo[i];
+    if (depth > 100) return (memo[i] = !!flagged[i]);   // guard against a cyclic parent chain
+    let v = !!flagged[i] || (projFlagged ? projFlagged[i] === true : false);
+    if (!v && parentIds && parentIds[i] != null) {
+      const pi = idx[parentIds[i]];
+      if (pi !== undefined) v = resolve(pi, depth + 1);
+    }
+    return (memo[i] = !!v);
+  };
+
+  const effFlagged = new Array(n);
+  for (let i = 0; i < n; i++) effFlagged[i] = resolve(i, 0);
+
+  return { ids: ids, effFlagged: effFlagged, effCompleted: effCompleted, effDropped: effDropped };
 }
 
 /**
@@ -504,21 +569,26 @@ function parseDate(dateStr) {
     d.setHours(17, 0, 0, 0);
     return d;
   }
-
-  // Handle "+Nd" format (e.g., "+3d" = 3 days from now)
-  const daysMatch = lowerDate.match(/^\+(\d+)d$/);
-  if (daysMatch) {
+  if (lowerDate === "yesterday") {
     const d = new Date(now);
-    d.setDate(d.getDate() + parseInt(daysMatch[1], 10));
+    d.setDate(d.getDate() - 1);
     d.setHours(17, 0, 0, 0);
     return d;
   }
 
-  // Handle "+Nw" format (weeks)
-  const weeksMatch = lowerDate.match(/^\+(\d+)w$/);
-  if (weeksMatch) {
+  // Relative offsets: [+-]N[dwmy] — "+3d", "-2w", "+1m", "-1y".
+  // The sign is optional-negative rather than always "+" because backdating
+  // (of complete --on -2d) needs to reach the past; "+3d" behaves as before.
+  const relMatch = lowerDate.match(/^([+-])(\d+)([dwmy])$/);
+  if (relMatch) {
+    const sign = relMatch[1] === "-" ? -1 : 1;
+    const amount = parseInt(relMatch[2], 10) * sign;
+    const unit = relMatch[3];
     const d = new Date(now);
-    d.setDate(d.getDate() + parseInt(weeksMatch[1], 10) * 7);
+    if (unit === "d") d.setDate(d.getDate() + amount);
+    else if (unit === "w") d.setDate(d.getDate() + amount * 7);
+    else if (unit === "m") d.setMonth(d.getMonth() + amount);
+    else if (unit === "y") d.setFullYear(d.getFullYear() + amount);
     d.setHours(17, 0, 0, 0);
     return d;
   }

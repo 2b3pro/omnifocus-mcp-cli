@@ -8,6 +8,8 @@
 
 ---
 
+![](./omnifocus-cli-sketchnote.png)
+
 ## 💡 The Problem
 
 OmniFocus is the gold standard for GTD on Apple platforms, but scripting it has always been painful:
@@ -110,6 +112,9 @@ cat outline.md | of add batch --folder "Q1 Goals"
 
 ### Modifying
 
+Date flags accept `today`, `tomorrow`, `yesterday`, relative offsets `±N` with
+`d`/`w`/`m`/`y` units (`+3d`, `-2w`, `+1m`, `-1y`), or ISO dates.
+
 ```bash
 # Update task
 of modify <task-id> --due "+3d" --flagged
@@ -130,11 +135,15 @@ of project modify <id> --status on-hold
 # Complete task
 of complete <task-id>
 
+# Backdate the completion (work finished earlier)
+of complete <task-id> --on -2d
+of complete <task-id> --on yesterday
+
 # Drop task (mark abandoned)
-of complete <task-id> --drop
+of drop <task-id>
 
 # Delete task permanently
-of complete <task-id> --delete
+of delete <task-id>
 
 # Bulk complete from stdin
 of list inbox -q | xargs -I {} of complete {}
@@ -151,6 +160,13 @@ of tag add "New Tag"
 
 # Move project to folder
 of project move <project-id> --folder "Work"
+
+# Delete a project permanently (refuses non-empty projects without --force)
+of project delete "Old Project" --dry-run   # preview what it holds
+of project delete "Old Project" --force     # delete it and its tasks
+
+# Delete a folder (same non-empty guard)
+of folder delete "Old Folder" --force
 
 # Review projects needing review
 of review
@@ -224,6 +240,68 @@ omnifocus-cli/
 ```
 
 The CLI spawns `osascript -l JavaScript` to execute JXA scripts that communicate with OmniFocus via the macOS scripting bridge. The MCP server wraps these same JXA scripts to expose them as tools for AI assistants.
+
+### Automation APIs: JXA and OmniJS
+
+OmniFocus exposes two automation surfaces, and this project deliberately uses the older-looking one.
+
+- **JXA** (JavaScript for Automation) drives the app through Apple Events and the scripting dictionary. Every property read is an inter-process round trip.
+- **OmniJS** (Omni Automation) is Omni's modern API. Scripts run *inside* OmniFocus, reached from JXA via `Application("OmniFocus").evaluateJavascript(source)` — so it is a payload delivered over the same bridge, not an alternative to it.
+
+The intuitive conclusion is that OmniJS should win, because its loop runs in-process. Measured on a real database (827 tasks, identical logic, identical output), it does not:
+
+| Approach | Time |
+|---|---|
+| **JXA, bulk property fetch** | **0.21s** |
+| OmniJS via `evaluateJavascript` | 1.78s |
+| JXA, one Apple Event per property per task | 19.3s |
+
+Breaking down where OmniJS spends its time:
+
+| Step | Time |
+|---|---|
+| `osascript` + connect to app | 0.03s |
+| `evaluateJavascript` with an empty body | 0.20s |
+| OmniJS reading `flattenedTasks.length` and nothing else | 1.1–1.8s |
+| OmniJS looping all 827 tasks | 1.78s |
+
+Materializing the task collection inside OmniJS is nearly the entire cost; the loop that follows is almost free. JXA's bulk path never materializes objects at all — it asks OmniFocus for whole-collection arrays of primitives:
+
+```javascript
+// One Apple Event per property, for every task at once — not per task.
+const ids = collection.id(), names = collection.name(), due = collection.effectiveDueDate();
+```
+
+That single pattern is the difference between 0.21s and 19.3s. It is implemented in `formatTasksBulk` / `formatTasksBriefBulk` in `jxa/utils/helpers.js`, and every list reader goes through it. **If you add a read path, fetch by collection, never per task.**
+
+#### Neither API is a superset
+
+The two dictionaries have complementary gaps, so "just use OmniJS" is not available even where it would be faster:
+
+| | OmniJS | JXA |
+|---|---|---|
+| `effectiveDueDate`, `effectiveDeferDate` | ✅ | ✅ |
+| `plannedDate`, `effectivePlannedDate` | ✅ | ✅ |
+| `effectiveFlagged` | ✅ | ❌ |
+| Full task status enum | ✅ `Task.Status` | ⚠️ `blocked` / `next` booleans |
+| `effectivelyCompleted`, `effectivelyDropped` | ❌ | ✅ |
+| `synchronize()` | ❌ | ✅ |
+
+Two consequences show up in this codebase:
+
+- **Sync must be JXA.** The OmniJS sandbox exposes no sync method, so `jxa/write/sync.js` calls `app.synchronize(doc)` directly.
+- **Flag inheritance has no JXA property.** OmniFocus's Flagged perspective shows a task when it is flagged *or* inherits a flag from its project *or* from an ancestor task, and JXA has no `effectiveFlagged`. Rather than drop into OmniJS, `effectiveFlagsBulk` in `jxa/utils/helpers.js` resolves that closure from three bulk arrays (`flagged`, `containingProject.flagged`, `parentTask.id`). It returns exactly the same set as OmniJS `effectiveFlagged`, in 0.25s versus 0.66s.
+
+Note the exclusion filter in that helper: it keys off `effectivelyCompleted` / `effectivelyDropped`, not the own properties. A live task inside a dropped project has `dropped === false` but `effectivelyDropped === true`, and filtering on the own property leaks it into results.
+
+#### When to reach for OmniJS
+
+Use JXA bulk fetch by default. Reach for `evaluateJavascript` only when:
+
+1. JXA cannot express the data at all *and* no closure over bulk arrays reconstructs it, or
+2. you are performing many mutations at once, where one in-process script may beat N Apple Events. This case is **untested here** — the measurements above cover reads only.
+
+Benchmark before switching. These numbers come from one database on one machine, and OmniJS timings varied between 0.66s and 1.89s across runs; treat them as indicative, and measure your own case rather than assuming either API wins.
 
 ---
 
