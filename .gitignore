@@ -41,3 +41,6 @@ coverage/
 .pai*
 .claude*
 test*
+!test/
+test/*
+!test/parse-date.test.js

@@ -5,6 +5,15 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-19
+
+### Fixed
+
+- Date-only inputs (`YYYY-MM-DD`) now resolve to 5 p.m. local time, matching
+  relative dates, instead of UTC midnight (the previous evening in Pacific
+  time). Explicit timestamps retain their time and offset. Existing stored
+  dates are not migrated.
+
 ## [1.1.0] - 2026-08-09
 
 ### Added

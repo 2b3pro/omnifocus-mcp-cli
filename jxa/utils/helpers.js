@@ -593,7 +593,26 @@ function parseDate(dateStr) {
     return d;
   }
 
-  // Try ISO date
+  // Date-only ISO input is a local calendar date, at the same 5pm used by
+  // relative dates. new Date("YYYY-MM-DD") instead means UTC midnight,
+  // which lands on the previous local day in timezones west of UTC.
+  const dateOnly = lowerDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly) {
+    const year = Number(dateOnly[1]);
+    const month = Number(dateOnly[2]) - 1;
+    const day = Number(dateOnly[3]);
+    const parsed = new Date(0);
+    // setFullYear avoids the Date constructor's 1900 offset for years 0-99.
+    parsed.setFullYear(year, month, day);
+    parsed.setHours(17, 0, 0, 0);
+    // Date setters normalize impossible dates; do not accept that rollover.
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month || parsed.getDate() !== day) {
+      return null;
+    }
+    return parsed;
+  }
+
+  // Preserve explicit times and timezone offsets in timestamp input.
   try {
     const parsed = new Date(dateStr);
     if (!isNaN(parsed.getTime())) {

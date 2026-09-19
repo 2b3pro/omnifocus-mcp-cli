@@ -114,6 +114,10 @@ cat outline.md | of add batch --folder "Q1 Goals"
 
 Date flags accept `today`, `tomorrow`, `yesterday`, relative offsets `±N` with
 `d`/`w`/`m`/`y` units (`+3d`, `-2w`, `+1m`, `-1y`), or ISO dates.
+Date-only values (`YYYY-MM-DD`) and relative dates resolve to **5 p.m. local
+time** on the requested day. ISO timestamps retain their specified time and
+timezone offset. This applies to due, defer, planned, and completion dates,
+as well as search date filters.
 
 ```bash
 # Update task
