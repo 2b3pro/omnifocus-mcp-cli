@@ -1413,6 +1413,258 @@ describe('Phase 13b: MCP Date Passthrough', { timeout: TIMEOUT * 12 }, () => {
 });
 
 // ============================================================================
+// PHASE 13c: MCP OPTION CONTRACT
+// ============================================================================
+// The MCP server builds the option object each JXA script reads. A key the
+// script does not read is dropped without an error, so every option is checked
+// here by its effect in OmniFocus rather than by the reported success.
+
+describe('Phase 13c: MCP Option Contract', { timeout: TIMEOUT * 40 }, () => {
+
+  let client;
+
+  const call = async (name, args) => {
+    const response = await client.callTool({ name, arguments: args });
+    return JSON.parse(response.content[0].text);
+  };
+  const addTask = async (base, flags = '') => {
+    const task = await runCliJson(`add task "${uniqueName(base)}" ${flags}`);
+    createdItems.tasks.push(task.id);
+    return task;
+  };
+  const addProject = async (base) => {
+    const name = uniqueName(base);
+    const result = await runCliJson(`add project "${name}"`);
+    createdItems.projects.push(name);
+    return { name, id: result.project.id };
+  };
+  const ids = (list) => list.map(item => item.id);
+
+  before(async () => {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { createMcpServer } = await import('../src/mcp/server.js');
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await createMcpServer().connect(serverTransport);
+    client = new Client({ name: 'of-test', version: '0.0.0' });
+    await client.connect(clientTransport);
+  });
+
+  after(async () => {
+    if (client) await client.close();
+  });
+
+  it('should set the estimate on task create and update', async () => {
+    const created = await call('omnifocus_task', {
+      action: 'create', name: uniqueName('Mcp_Estimate'), estimate_mins: 25
+    });
+    assert.ok(created.success, `Should succeed: ${created.error}`);
+    createdItems.tasks.push(created.id);
+    let got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.estimatedMinutes, 25, 'estimate set on create');
+
+    const updated = await call('omnifocus_task', { action: 'update', id: created.id, estimate_mins: 40 });
+    assert.ok(updated.success, `Should succeed: ${updated.error}`);
+    got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.estimatedMinutes, 40, 'estimate set on update');
+  });
+
+  it('should replace the tags on task update', async () => {
+    const tagNames = [uniqueName('Mcp_TagA'), uniqueName('Mcp_TagB'), uniqueName('Mcp_TagC')];
+    for (const name of tagNames) {
+      const tag = await runCliJson(`tag add "${name}"`);
+      createdItems.tags.push(tag.tag.id);
+    }
+    const created = await call('omnifocus_task', {
+      action: 'create', name: uniqueName('Mcp_Tags'), tags: [tagNames[0], tagNames[1]]
+    });
+    createdItems.tasks.push(created.id);
+
+    const updated = await call('omnifocus_task', {
+      action: 'update', id: created.id, tags: [tagNames[1], tagNames[2]]
+    });
+    assert.ok(updated.success, `Should succeed: ${updated.error}`);
+    let got = await runCliJson(`get task "${created.id}"`);
+    assert.deepStrictEqual([...got.task.tags].sort(), [tagNames[1], tagNames[2]].sort(), 'tags replaced');
+
+    const unknown = await call('omnifocus_task', {
+      action: 'update', id: created.id, name: 'CLI_Test_should_not_apply', tags: [tagNames[0], 'CLI_Test_no_such_tag_xyz']
+    });
+    assert.strictEqual(unknown.success, false, 'Should not report success');
+    assert.match(unknown.error, /Tag not found: CLI_Test_no_such_tag_xyz/);
+    got = await runCliJson(`get task "${created.id}"`);
+    assert.deepStrictEqual([...got.task.tags].sort(), [tagNames[1], tagNames[2]].sort(), 'tags untouched');
+    assert.notStrictEqual(got.task.name, 'CLI_Test_should_not_apply', 'other changes in the same call not applied');
+
+    const cleared = await call('omnifocus_task', { action: 'update', id: created.id, tags: [] });
+    assert.ok(cleared.success, `Should succeed: ${cleared.error}`);
+    got = await runCliJson(`get task "${created.id}"`);
+    assert.deepStrictEqual(got.task.tags, [], 'an empty list clears the tags');
+
+    const untouched = await call('omnifocus_task', { action: 'update', id: created.id, tags: [tagNames[0]] });
+    assert.ok(untouched.success, `Should succeed: ${untouched.error}`);
+    await call('omnifocus_task', { action: 'update', id: created.id, note: 'note only' });
+    got = await runCliJson(`get task "${created.id}"`);
+    assert.deepStrictEqual(got.task.tags, [tagNames[0]], 'an update without tags leaves them alone');
+  });
+
+  it('should act on every id given to complete, drop and delete', async () => {
+    for (const [action, key] of [['complete', 'completed'], ['drop', 'dropped'], ['delete', 'deleted']]) {
+      const first = await addTask(`Mcp_${action}_1`);
+      const second = await addTask(`Mcp_${action}_2`);
+      const third = await addTask(`Mcp_${action}_3`);
+
+      const result = await call('omnifocus_task', { action, ids: [first.id, second.id, third.id] });
+      assert.ok(result.success, `${action} should succeed: ${JSON.stringify(result.errors || result.error)}`);
+      assert.deepStrictEqual(ids(result[key]).sort(), [first.id, second.id, third.id].sort(),
+        `${action} should act on all three tasks`);
+    }
+  });
+
+  it('should include completed tasks in task lists when asked', async () => {
+    const marker = uniqueName('Mcp_Completed');
+    const open = await runCliJson(`add task "${marker}_open" --flagged`);
+    const done = await runCliJson(`add task "${marker}_done" --flagged`);
+    createdItems.tasks.push(open.id, done.id);
+    await runCliJson(`complete "${done.id}"`);
+
+    for (const view of ['inbox', 'flagged', 'search']) {
+      const args = { action: 'list', view, query: marker, limit: 2000 };
+      const without = await call('omnifocus_task', args);
+      const withCompleted = await call('omnifocus_task', { ...args, include_completed: true });
+      assert.ok(ids(without.tasks).includes(open.id), `${view}: open task listed`);
+      assert.ok(!ids(without.tasks).includes(done.id), `${view}: completed task hidden by default`);
+      assert.ok(ids(withCompleted.tasks).includes(open.id), `${view}: open task listed with include_completed`);
+      assert.ok(ids(withCompleted.tasks).includes(done.id), `${view}: completed task listed with include_completed`);
+    }
+  });
+
+  it('should include flagged tasks in the today view when asked', async () => {
+    const task = await addTask('Mcp_TodayFlagged', '--flagged');
+
+    const without = await call('omnifocus_task', { action: 'list', view: 'today', limit: 2000 });
+    const withFlagged = await call('omnifocus_task', { action: 'list', view: 'today', flagged: true, limit: 2000 });
+    assert.ok(!ids(without.tasks).includes(task.id), 'undated flagged task not in today by default');
+    assert.ok(ids(withFlagged.tasks).includes(task.id), 'undated flagged task in today with flagged');
+  });
+
+  it('should complete, drop, hold and activate projects', async () => {
+    const statusOf = async (name) => (await runCliJson(`get project "${name}"`)).project.status;
+
+    const held = await addProject('Mcp_Project_Hold');
+    let result = await call('omnifocus_project', { action: 'set_status', id: held.id, status: 'on_hold' });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+    assert.strictEqual(await statusOf(held.name), 'on hold status');
+
+    result = await call('omnifocus_project', { action: 'set_status', id: held.id, status: 'active' });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+    assert.strictEqual(await statusOf(held.name), 'active status');
+
+    const completed = await addProject('Mcp_Project_Complete');
+    result = await call('omnifocus_project', { action: 'complete', id: completed.id });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+    assert.strictEqual(await statusOf(completed.name), 'done status');
+
+    const dropped = await addProject('Mcp_Project_Drop');
+    result = await call('omnifocus_project', { action: 'drop', id: dropped.id });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+    assert.strictEqual(await statusOf(dropped.name), 'dropped status');
+  });
+
+  it('should include completed and on-hold projects in the project list when asked', async () => {
+    const active = await addProject('Mcp_List_Active');
+    const held = await addProject('Mcp_List_Hold');
+    const done = await addProject('Mcp_List_Done');
+    await runCliJson(`project hold "${held.name}"`);
+    await runCliJson(`project complete "${done.name}"`);
+
+    const list = async (args) => ids((await call('omnifocus_project', { action: 'list', limit: 2000, ...args })).projects);
+
+    const plain = await list({});
+    assert.ok(plain.includes(active.id), 'active project listed');
+    assert.ok(!plain.includes(held.id), 'on-hold project hidden by default');
+    assert.ok(!plain.includes(done.id), 'completed project hidden by default');
+    assert.ok((await list({ include_on_hold: true })).includes(held.id), 'on-hold project listed with include_on_hold');
+    assert.ok((await list({ include_completed: true })).includes(done.id), 'completed project listed with include_completed');
+  });
+
+  it('should include completed tasks in project and tag task lists when asked', async () => {
+    const project = await addProject('Mcp_Tasks_Project');
+    const tagName = uniqueName('Mcp_Tasks_Tag');
+    const tag = await runCliJson(`tag add "${tagName}"`);
+    createdItems.tags.push(tag.tag.id);
+
+    const open = await addTask('Mcp_Tasks_open', `--project "${project.name}" --tag "${tagName}"`);
+    const done = await addTask('Mcp_Tasks_done', `--project "${project.name}" --tag "${tagName}"`);
+    await runCliJson(`complete "${done.id}"`);
+
+    const inProject = async (args) => ids((await call('omnifocus_project',
+      { action: 'get_tasks', id: project.id, limit: 2000, ...args })).tasks);
+    assert.deepStrictEqual(await inProject({}), [open.id], 'project: completed task hidden by default');
+    assert.deepStrictEqual((await inProject({ include_completed: true })).sort(), [open.id, done.id].sort(),
+      'project: completed task listed with include_completed');
+
+    // get_tasks on a tag returns a bare array
+    const withTag = async (args) => ids(await call('omnifocus_tag',
+      { action: 'get_tasks', id: tag.tag.id, limit: 2000, ...args }));
+    assert.deepStrictEqual(await withTag({}), [open.id], 'tag: completed task hidden by default');
+    assert.deepStrictEqual((await withTag({ include_completed: true })).sort(), [open.id, done.id].sort(),
+      'tag: completed task listed with include_completed');
+  });
+
+  it('should include hidden tags and folders in lists when asked', async () => {
+    const tagName = uniqueName('Mcp_Hidden_Tag');
+    const tag = await runCliJson(`tag add "${tagName}"`);
+    createdItems.tags.push(tag.tag.id);
+    const folderName = uniqueName('Mcp_Hidden_Folder');
+    const folder = await runCliJson(`folder add "${folderName}"`);
+    createdItems.folders.push(folderName);
+
+    let result = await call('omnifocus_tag', { action: 'update', id: tag.tag.id, hidden: true });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+    result = await call('omnifocus_folder', { action: 'update', id: folder.folder.id, hidden: true });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+
+    const tags = async (args) => ids((await call('omnifocus_tag', { action: 'list', limit: 2000, ...args })).tags);
+    assert.ok(!(await tags({})).includes(tag.tag.id), 'hidden tag not listed by default');
+    assert.ok((await tags({ include_hidden: true })).includes(tag.tag.id), 'hidden tag listed with include_hidden');
+
+    const folders = async (args) => ids((await call('omnifocus_folder', { action: 'list', limit: 2000, ...args })).folders);
+    assert.ok(!(await folders({})).includes(folder.folder.id), 'hidden folder not listed by default');
+    assert.ok((await folders({ include_hidden: true })).includes(folder.folder.id), 'hidden folder listed with include_hidden');
+  });
+
+  it('should delete a tag', async () => {
+    const tagName = uniqueName('Mcp_Delete_Tag');
+    const tag = await runCliJson(`tag add "${tagName}"`);
+    createdItems.tags.push(tag.tag.id);
+
+    const result = await call('omnifocus_tag', { action: 'delete', id: tag.tag.id });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+
+    const remaining = await call('omnifocus_tag', { action: 'list', include_hidden: true, limit: 2000 });
+    assert.ok(!ids(remaining.tags).includes(tag.tag.id), 'tag should be gone');
+    createdItems.tags.pop();
+  });
+
+  it('should mark a project reviewed', async () => {
+    const project = await addProject('Mcp_Review');
+    const before = (await runCliJson(`get project "${project.name}"`)).project.lastReviewDate;
+    await sleep(1500);
+
+    const started = Date.now();
+    const result = await call('omnifocus_util', { action: 'mark_reviewed', project_id: project.id });
+    assert.ok(result.success, `Should succeed: ${result.error}`);
+
+    const after = (await runCliJson(`get project "${project.name}"`)).project.lastReviewDate;
+    assert.notStrictEqual(after, before, 'lastReviewDate should change');
+    assert.ok(new Date(after).getTime() >= started - 1000, 'lastReviewDate should be the time of the call');
+  });
+
+});
+
+// ============================================================================
 // PHASE 14: ERROR HANDLING
 // ============================================================================
 

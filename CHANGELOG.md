@@ -40,6 +40,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   evening was listed under the following day in timezones west of UTC.
 - MCP: `due` and `defer` on task and project `create`/`update` were silently
   dropped.
+- MCP: other options were sent under names the scripts do not read, so they
+  had no effect while the call reported success:
+  - `estimate_mins` on task `create`/`update`.
+  - `include_completed` on every task, project and tag list.
+  - `include_on_hold` on the project list, `include_hidden` on the tag and
+    folder lists, and `flagged` on the today view.
+  - Project `complete`, `drop` and `set_status`, tag `delete`, and
+    `mark_reviewed` changed nothing.
+- MCP: task `complete`, `drop` and `delete` acted on the first of several
+  `ids` only.
+- MCP: `tags` on task `update` was ignored. It now replaces the task's tags;
+  an empty list clears them, and an unknown tag is an error.
 
 ## [1.1.1] - 2026-09-19
 
