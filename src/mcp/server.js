@@ -113,8 +113,8 @@ complete/drop/delete: ids[] (required)`,
               note: args.note,
               project: args.project,
               tags: args.tags || [],
-              due: args.due,
-              defer: args.defer,
+              dueDate: args.due,
+              deferDate: args.defer,
               flagged: args.flagged,
               estimate: args.estimate_mins
             })
@@ -129,8 +129,8 @@ complete/drop/delete: ids[] (required)`,
             JSON.stringify({
               name: args.name,
               note: args.note,
-              due: args.due,
-              defer: args.defer,
+              dueDate: args.due,
+              deferDate: args.defer,
               flagged: args.flagged,
               project: args.project,
               tags: args.tags,
@@ -237,8 +237,8 @@ set_status: id (required), status=active|on_hold`,
               folder: args.folder,
               sequential: args.sequential,
               tasks: args.tasks,
-              due: args.due,
-              defer: args.defer,
+              dueDate: args.due,
+              deferDate: args.defer,
               note: args.note
             })
           ]);
@@ -252,8 +252,8 @@ set_status: id (required), status=active|on_hold`,
             JSON.stringify({
               action: 'modify',
               name: args.name,
-              due: args.due,
-              defer: args.defer,
+              dueDate: args.due,
+              deferDate: args.defer,
               note: args.note,
               sequential: args.sequential
             })

@@ -6,9 +6,17 @@
     const name = getArg(4, "");
     const opts = parseJsonArg(5, {});
 
+    // Parse dates before anything is created: a date that doesn't parse fails
+    // the command rather than creating a task without it.
+    const dates = {
+      due: opts.dueDate ? requireDate(opts.dueDate, "due") : null,
+      defer: opts.deferDate ? requireDate(opts.deferDate, "defer") : null,
+      planned: opts.plannedDate ? requireDate(opts.plannedDate, "planned") : null
+    };
+
     // Handle bulk mode
     if (opts.bulk && Array.isArray(opts.bulk) && opts.bulk.length > 0) {
-      return handleBulk(app, doc, opts);
+      return handleBulk(app, doc, opts, dates);
     }
 
     // Single task mode
@@ -38,7 +46,7 @@
       });
     }
 
-    const task = createTask(app, doc, name, opts);
+    const task = createTask(app, doc, name, opts, dates);
     // Return minimal info at top level for backward compatibility (formatTask is slow due to IPC overhead)
     const taskId = task.id();
     const taskName = task.name();
@@ -76,7 +84,7 @@
   }
 
   // Helper: Create a single task with options
-  function createTask(app, doc, taskName, opts) {
+  function createTask(app, doc, taskName, opts, dates) {
     let task;
 
     // Create task object
@@ -101,20 +109,11 @@
       task.note = opts.note;
     }
 
-    if (opts.dueDate) {
-      const due = parseDate(opts.dueDate);
-      if (due) task.dueDate = due;
-    }
+    if (dates.due) task.dueDate = dates.due;
 
-    if (opts.deferDate) {
-      const defer = parseDate(opts.deferDate);
-      if (defer) task.deferDate = defer;
-    }
+    if (dates.defer) task.deferDate = dates.defer;
 
-    if (opts.plannedDate) {
-      const planned = parseDate(opts.plannedDate);
-      if (planned) task.plannedDate = planned;
-    }
+    if (dates.planned) task.plannedDate = dates.planned;
 
     if (opts.flagged) {
       task.flagged = true;
@@ -146,7 +145,7 @@
   }
 
   // Helper: Handle bulk task creation
-  function handleBulk(app, doc, opts) {
+  function handleBulk(app, doc, opts, dates) {
     const taskNames = opts.bulk;
 
     // Dry run mode
@@ -176,7 +175,7 @@
       if (!taskName || typeof taskName !== 'string') continue;
 
       try {
-        const task = createTask(app, doc, taskName.trim(), opts);
+        const task = createTask(app, doc, taskName.trim(), opts, dates);
         created.push({
           id: task.id(),
           name: task.name()

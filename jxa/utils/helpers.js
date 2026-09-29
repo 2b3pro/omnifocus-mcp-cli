@@ -544,36 +544,111 @@ function findTask(doc, taskId) {
   return null;
 }
 
+// Time of day given to a date typed without one. OmniFocus keeps a separate
+// default per field; these are its factory values, used when the user's
+// settings cannot be read.
+const FACTORY_DEFAULT_TIMES = { due: [17, 0, 0], defer: [0, 0, 0], planned: [9, 0, 0] };
+
+// Fields with no OmniFocus setting behind them, as [h, m, s, ms]. Search
+// bounds cover the whole of the day they name; a backdated completion lands
+// mid-day (and see parseDate for a completion dated today).
+const FIXED_DEFAULT_TIMES = {
+  after: [0, 0, 0, 0],
+  before: [23, 59, 59, 999],
+  completion: [12, 0, 0, 0]
+};
+
+// parseDate() without a field keeps the 5pm it has always used.
+const UNSPECIFIED_DEFAULT_TIME = [17, 0, 0];
+
+let defaultTimesCache = null;
+
+/**
+ * Read the user's default due/defer/planned times from OmniFocus settings.
+ * One Omni Automation round-trip for all three; values are clock strings
+ * such as "07:00:00" or "09:00".
+ */
+function readDefaultTimeSettings() {
+  return JSON.parse(Application("OmniFocus").evaluateJavascript(
+    "JSON.stringify({" +
+    " due: String(settings.objectForKey('DefaultDueTime'))," +
+    " defer: String(settings.objectForKey('DefaultStartTime'))," +
+    " planned: String(settings.objectForKey('DefaultPlannedTime'))" +
+    "})"
+  ));
+}
+
+/**
+ * Parse a "HH:MM" or "HH:MM:SS" clock string into [h, m, s], or null
+ */
+function parseClockTime(value) {
+  const match = String(value).match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+  if (!match) return null;
+  const clock = [Number(match[1]), Number(match[2]), Number(match[3] || 0)];
+  if (clock[0] > 23 || clock[1] > 59 || clock[2] > 59) return null;
+  return clock;
+}
+
+/**
+ * Default time of day, as [h, m, s] or [h, m, s, ms], for a date field
+ */
+function defaultTimeFor(field) {
+  if (FIXED_DEFAULT_TIMES.hasOwnProperty(field)) return FIXED_DEFAULT_TIMES[field];
+  if (!FACTORY_DEFAULT_TIMES.hasOwnProperty(field)) return UNSPECIFIED_DEFAULT_TIME;
+
+  if (!defaultTimesCache) {
+    let settings = {};
+    try {
+      settings = readDefaultTimeSettings() || {};
+    } catch {}
+    defaultTimesCache = {};
+    for (const name in FACTORY_DEFAULT_TIMES) {
+      defaultTimesCache[name] = parseClockTime(settings[name]) || FACTORY_DEFAULT_TIMES[name];
+    }
+  }
+  return defaultTimesCache[field];
+}
+
 /**
  * Parse natural date string
+ * @param {string} dateStr - "today", "tomorrow", "+3d", "-2w", or ISO
+ * @param {string} [field] - picks the time of day for input that has none.
+ *   "due", "defer", "planned": what OmniFocus uses for that field.
+ *   "after", "before": start and end of the day, for search bounds.
+ *   "completion": noon, or the current time if the day is today.
  */
-function parseDate(dateStr) {
+function parseDate(dateStr, field) {
   if (!dateStr) return null;
 
   const now = new Date();
   const lowerDate = dateStr.toLowerCase().trim();
+  const atDefaultTime = (d) => {
+    // Any fixed time on today's date could still be ahead of the clock, and
+    // a task cannot have been completed later than now.
+    if (field === "completion" && localDateKey(d) === localDateKey(now)) return new Date(now);
+    const time = defaultTimeFor(field);
+    d.setHours(time[0], time[1], time[2], time[3] || 0);
+    return d;
+  };
 
   // Handle relative dates
   if (lowerDate === "today") {
-    return new Date(now.getFullYear(), now.getMonth(), now.getDate(), 17, 0, 0);
+    return atDefaultTime(new Date(now));
   }
   if (lowerDate === "tomorrow") {
     const d = new Date(now);
     d.setDate(d.getDate() + 1);
-    d.setHours(17, 0, 0, 0);
-    return d;
+    return atDefaultTime(d);
   }
   if (lowerDate === "next week") {
     const d = new Date(now);
     d.setDate(d.getDate() + 7);
-    d.setHours(17, 0, 0, 0);
-    return d;
+    return atDefaultTime(d);
   }
   if (lowerDate === "yesterday") {
     const d = new Date(now);
     d.setDate(d.getDate() - 1);
-    d.setHours(17, 0, 0, 0);
-    return d;
+    return atDefaultTime(d);
   }
 
   // Relative offsets: [+-]N[dwmy] — "+3d", "-2w", "+1m", "-1y".
@@ -589,12 +664,11 @@ function parseDate(dateStr) {
     else if (unit === "w") d.setDate(d.getDate() + amount * 7);
     else if (unit === "m") d.setMonth(d.getMonth() + amount);
     else if (unit === "y") d.setFullYear(d.getFullYear() + amount);
-    d.setHours(17, 0, 0, 0);
-    return d;
+    return atDefaultTime(d);
   }
 
-  // Date-only ISO input is a local calendar date, at the same 5pm used by
-  // relative dates. new Date("YYYY-MM-DD") instead means UTC midnight,
+  // Date-only ISO input is a local calendar date, at the same default time
+  // used by relative dates. new Date("YYYY-MM-DD") instead means UTC midnight,
   // which lands on the previous local day in timezones west of UTC.
   const dateOnly = lowerDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   if (dateOnly) {
@@ -604,12 +678,11 @@ function parseDate(dateStr) {
     const parsed = new Date(0);
     // setFullYear avoids the Date constructor's 1900 offset for years 0-99.
     parsed.setFullYear(year, month, day);
-    parsed.setHours(17, 0, 0, 0);
     // Date setters normalize impossible dates; do not accept that rollover.
     if (parsed.getFullYear() !== year || parsed.getMonth() !== month || parsed.getDate() !== day) {
       return null;
     }
-    return parsed;
+    return atDefaultTime(parsed);
   }
 
   // Preserve explicit times and timezone offsets in timestamp input.
@@ -621,4 +694,25 @@ function parseDate(dateStr) {
   } catch {}
 
   return null;
+}
+
+/**
+ * parseDate() where a bad date must not pass silently: an unparseable date is
+ * an error, so a mistyped date cannot report success while leaving a field
+ * unset or a search filter unapplied. `label` names the date in the message
+ * when the field alone would not ("due-before" rather than "before").
+ */
+function requireDate(dateStr, field, label) {
+  const parsed = parseDate(dateStr, field);
+  if (!parsed) throw new Error("Invalid " + (label || field) + " date: " + dateStr);
+  return parsed;
+}
+
+/**
+ * Local calendar day of a date as YYYY-MM-DD. toISOString() gives the UTC
+ * day, which is the next day for an evening time west of UTC.
+ */
+function localDateKey(date) {
+  const pad = (n) => (n < 10 ? "0" : "") + n;
+  return date.getFullYear() + "-" + pad(date.getMonth() + 1) + "-" + pad(date.getDate());
 }

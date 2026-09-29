@@ -114,10 +114,33 @@ cat outline.md | of add batch --folder "Q1 Goals"
 
 Date flags accept `today`, `tomorrow`, `yesterday`, relative offsets `±N` with
 `d`/`w`/`m`/`y` units (`+3d`, `-2w`, `+1m`, `-1y`), or ISO dates.
-Date-only values (`YYYY-MM-DD`) and relative dates resolve to **5 p.m. local
-time** on the requested day. ISO timestamps retain their specified time and
-timezone offset. This applies to due, defer, planned, and completion dates,
-as well as search date filters.
+ISO timestamps retain their specified time and timezone offset.
+
+Date-only values (`YYYY-MM-DD`) and relative dates have no time of day, so
+they take the default time OmniFocus uses for that field, read from your
+OmniFocus settings:
+
+| Field | OmniFocus setting key | Factory default |
+|---|---|---|
+| Due | `DefaultDueTime` | 5:00 p.m. |
+| Defer | `DefaultStartTime` | 12:00 a.m. |
+| Planned | `DefaultPlannedTime` | 9:00 a.m. |
+
+The factory default is used if the setting cannot be read.
+
+Dates that are not one of those fields have fixed rules:
+
+| Flag | A bare date means |
+|---|---|
+| `of complete --on` | Noon on that day, or the current time if the day is today |
+| `--due-after` | The start of that day (12:00 a.m.) |
+| `--due-before` | The end of that day (11:59:59 p.m.) |
+
+So `of search --due-after 2026-10-01 --due-before 2026-10-01` returns
+everything due on October 1.
+
+A date that cannot be parsed is an error: nothing is created, modified, or
+searched.
 
 ```bash
 # Update task

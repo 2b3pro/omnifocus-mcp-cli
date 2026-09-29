@@ -10,6 +10,11 @@
       return JSON.stringify({ success: false, error: "Project name is required" });
     }
 
+    // Parse dates before anything is created: a date that doesn't parse fails
+    // the command rather than creating a project without it.
+    const due = opts.dueDate ? requireDate(opts.dueDate, "due") : null;
+    const defer = opts.deferDate ? requireDate(opts.deferDate, "defer") : null;
+
     // Dry run mode
     if (opts.dryRun) {
       const preview = {
@@ -54,15 +59,9 @@
       project.note = opts.note;
     }
 
-    if (opts.dueDate) {
-      const due = parseDate(opts.dueDate);
-      if (due) project.dueDate = due;
-    }
+    if (due) project.dueDate = due;
 
-    if (opts.deferDate) {
-      const defer = parseDate(opts.deferDate);
-      if (defer) project.deferDate = defer;
-    }
+    if (defer) project.deferDate = defer;
 
     if (opts.flagged) {
       project.flagged = true;

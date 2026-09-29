@@ -37,7 +37,7 @@
       if (dueDate > endDate) continue;
 
       // Create date key (YYYY-MM-DD)
-      const dateKey = dueDate.toISOString().split('T')[0];
+      const dateKey = localDateKey(dueDate);
 
       if (!forecast[dateKey]) {
         forecast[dateKey] = [];

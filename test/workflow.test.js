@@ -24,7 +24,7 @@
 
 import { describe, it, before, after } from 'node:test';
 import assert from 'node:assert';
-import { exec } from 'node:child_process';
+import { exec, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const execAsync = promisify(exec);
@@ -828,6 +828,250 @@ describe('Phase 9b: Planned Date', { timeout: TIMEOUT * 12 }, () => {
 });
 
 // ============================================================================
+// PHASE 9c: DATE DEFAULTS, VALIDATION & FORECAST (issue #1)
+// ============================================================================
+
+describe('Phase 9c: Date Defaults, Validation & Forecast', { timeout: TIMEOUT * 20 }, () => {
+
+  // The time of day OmniFocus gives a bare date, per field, read from the
+  // user's settings with the factory value as fallback — what typing a bare
+  // date into OmniFocus itself would produce.
+  const FACTORY = { due: '17:00', defer: '00:00', planned: '09:00' };
+  const SETTING_KEYS = { due: 'DefaultDueTime', defer: 'DefaultStartTime', planned: 'DefaultPlannedTime' };
+  const expected = {};
+
+  const clockOf = (iso) => {
+    const d = new Date(iso);
+    return [d.getHours(), d.getMinutes(), d.getSeconds()];
+  };
+  const localDay = (iso) => {
+    const d = new Date(iso);
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  };
+
+  let dateTaskId;
+
+  before(async () => {
+    for (const [field, key] of Object.entries(SETTING_KEYS)) {
+      const raw = execFileSync('osascript', ['-l', 'JavaScript', '-e',
+        `Application("OmniFocus").evaluateJavascript("String(settings.objectForKey('${key}'))")`
+      ], { encoding: 'utf8', timeout: TIMEOUT }).trim();
+      const match = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      const clock = match ? match : FACTORY[field].match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+      expected[field] = [Number(clock[1]), Number(clock[2]), Number(clock[3] || 0)];
+    }
+
+    const result = await runCliJson(`add task "${uniqueName('DateDefaults_Task')}"`);
+    dateTaskId = result.id;
+    createdItems.tasks.push(dateTaskId);
+  });
+
+  it('should give bare dates each field\'s own default time on add', async () => {
+    const created = await runCliJson(
+      `add task "${uniqueName('DateDefaults_Add')}" --due "2030-05-01" --defer "2030-03-15" --planned "2030-04-01"`);
+    createdItems.tasks.push(created.id);
+    const got = await runCliJson(`get task "${created.id}"`);
+
+    assert.strictEqual(localDay(got.task.dueDate), '2030-05-01');
+    assert.strictEqual(localDay(got.task.deferDate), '2030-03-15');
+    assert.strictEqual(localDay(got.task.plannedDate), '2030-04-01');
+    assert.deepStrictEqual(clockOf(got.task.dueDate), expected.due, 'due uses the default due time');
+    assert.deepStrictEqual(clockOf(got.task.deferDate), expected.defer, 'defer uses the default defer time');
+    assert.deepStrictEqual(clockOf(got.task.plannedDate), expected.planned, 'planned uses the default planned time');
+  });
+
+  it('should give relative dates each field\'s own default time on modify', async () => {
+    const result = await runCliJson(`modify "${dateTaskId}" --due "+3d" --defer "tomorrow" --planned "+2d"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${dateTaskId}"`);
+    assert.deepStrictEqual(clockOf(got.task.dueDate), expected.due);
+    assert.deepStrictEqual(clockOf(got.task.deferDate), expected.defer);
+    assert.deepStrictEqual(clockOf(got.task.plannedDate), expected.planned);
+  });
+
+  it('should keep an explicit time on every field', async () => {
+    const result = await runCliJson(
+      `modify "${dateTaskId}" --due "2030-05-01T21:45:00" --defer "2030-03-15T13:20:00" --planned "2030-04-01T06:10:00"`);
+    assert.ok(result.success, 'Should succeed');
+    const got = await runCliJson(`get task "${dateTaskId}"`);
+    assert.deepStrictEqual(clockOf(got.task.dueDate), [21, 45, 0]);
+    assert.deepStrictEqual(clockOf(got.task.deferDate), [13, 20, 0]);
+    assert.deepStrictEqual(clockOf(got.task.plannedDate), [6, 10, 0]);
+  });
+
+  it('should give project dates the field default times', async () => {
+    const name = uniqueName('DateDefaults_Project');
+    await runCliJson(`add project "${name}" --due "2030-05-01" --defer "2030-03-15"`);
+    createdItems.projects.push(name);
+    let got = await runCliJson(`get project "${name}"`);
+    assert.deepStrictEqual(clockOf(got.project.dueDate), expected.due);
+    assert.deepStrictEqual(clockOf(got.project.deferDate), expected.defer);
+
+    await runCliJson(`project modify "${name}" --due "2030-06-01" --defer "2030-04-15"`);
+    got = await runCliJson(`get project "${name}"`);
+    assert.strictEqual(localDay(got.project.dueDate), '2030-06-01');
+    assert.strictEqual(localDay(got.project.deferDate), '2030-04-15');
+    assert.deepStrictEqual(clockOf(got.project.dueDate), expected.due);
+    assert.deepStrictEqual(clockOf(got.project.deferDate), expected.defer);
+  });
+
+  it('should reject an unparseable date on add and create nothing', async () => {
+    const name = uniqueName('DateInvalid_Add');
+    const result = await runCli(`add task "${name}" --defer "next friday" --json`);
+    const json = result.json || tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid defer date: next friday/);
+
+    const found = await runCliJson(`search "${name}" --all`);
+    for (const task of found.tasks) createdItems.tasks.push(task.id);
+    assert.strictEqual(found.tasks.length, 0, 'No task should have been created');
+  });
+
+  it('should reject an unparseable date in --dry-run too', async () => {
+    const result = await runCli(`add task "${uniqueName('DateInvalid_Dry')}" --due "3d" --dry-run --json`);
+    const json = result.json || tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid due date: 3d/);
+  });
+
+  it('should reject an unparseable date on modify and change nothing', async () => {
+    await runCliJson(`modify "${dateTaskId}" --defer "2030-03-15T13:20:00"`);
+    const before = await runCliJson(`get task "${dateTaskId}"`);
+
+    const result = await runCli(`modify "${dateTaskId}" --name "CLI_Test_should_not_apply" --defer "2030-02-30" --json`);
+    assert.strictEqual(result.success, false, 'Should exit non-zero');
+    const json = tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid defer date: 2030-02-30/);
+
+    const after = await runCliJson(`get task "${dateTaskId}"`);
+    assert.strictEqual(after.task.deferDate, before.task.deferDate, 'defer date untouched');
+    assert.strictEqual(after.task.name, before.task.name, 'other changes in the same command not applied');
+  });
+
+  it('should reject a malformed relative offset on modify', async () => {
+    const before = await runCliJson(`get task "${dateTaskId}"`);
+    const result = await runCli(`modify "${dateTaskId}" --defer-by "soon" --json`);
+    const json = tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid defer offset: soon/);
+    const after = await runCliJson(`get task "${dateTaskId}"`);
+    assert.strictEqual(after.task.deferDate, before.task.deferDate, 'defer date untouched');
+  });
+
+  it('should reject an unparseable date on project add and modify', async () => {
+    const name = uniqueName('DateInvalid_Project');
+    const added = await runCli(`add project "${name}" --due "someday" --json`);
+    const addedJson = added.json || tryParseJson(added.stdout);
+    assert.strictEqual(addedJson.success, false, 'Should not report success');
+    assert.match(addedJson.error, /Invalid due date: someday/);
+    const listed = await runCliJson('list projects --all --limit 500');
+    const leaked = listed.projects.filter(p => p.name === name);
+    for (const project of leaked) createdItems.projects.push(project.id);
+    assert.strictEqual(leaked.length, 0, 'No project should have been created');
+
+    const target = uniqueName('DateInvalid_ProjectModify');
+    await runCliJson(`add project "${target}"`);
+    createdItems.projects.push(target);
+    const modified = await runCli(`project modify "${target}" --defer "someday" --json`);
+    const modifiedJson = modified.json || tryParseJson(modified.stdout);
+    assert.strictEqual(modifiedJson.success, false, 'Should not report success');
+    assert.match(modifiedJson.error, /Invalid defer date: someday/);
+  });
+
+  it('should list a task under its local due day in the forecast', async () => {
+    // 23:30 local is the next day in UTC for every timezone west of it, and
+    // the same day in UTC for none east of UTC+0:30 — so also pin 00:30.
+    const pad = (n) => String(n).padStart(2, '0');
+    const day = new Date();
+    day.setDate(day.getDate() + 2);
+    const key = `${day.getFullYear()}-${pad(day.getMonth() + 1)}-${pad(day.getDate())}`;
+
+    const late = await runCliJson(`add task "${uniqueName('Forecast_Late')}" --due "${key}T23:30:00"`);
+    createdItems.tasks.push(late.id);
+    const early = await runCliJson(`add task "${uniqueName('Forecast_Early')}" --due "${key}T00:30:00"`);
+    createdItems.tasks.push(early.id);
+
+    const result = await runCliJson('list forecast --days 4');
+    assert.ok(result.success, 'Should succeed');
+    const dayOf = (id) => {
+      const entry = result.forecast.find(f => f.tasks.some(t => t.id === id));
+      return entry ? entry.date : null;
+    };
+    assert.strictEqual(dayOf(late.id), key, 'late-evening task listed under its local day');
+    assert.strictEqual(dayOf(early.id), key, 'early-morning task listed under its local day');
+  });
+
+  it('should stamp the current time for a completion dated today', async () => {
+    const task = await runCliJson(`add task "${uniqueName('Complete_Today')}"`);
+    createdItems.tasks.push(task.id);
+
+    const started = Date.now();
+    const result = await runCliJson(`complete "${task.id}" --on today`);
+    const finished = Date.now();
+    assert.ok(result.success, 'Should succeed');
+
+    // OmniFocus keeps whole seconds, so allow for the truncation.
+    const stamped = new Date(result.completed[0].completionDate).getTime();
+    assert.ok(stamped >= started - 1000 && stamped <= finished,
+      `completion ${result.completed[0].completionDate} should fall while the command ran`);
+  });
+
+  it('should stamp noon for a completion backdated to a bare day', async () => {
+    const task = await runCliJson(`add task "${uniqueName('Complete_Yesterday')}"`);
+    createdItems.tasks.push(task.id);
+
+    const result = await runCliJson(`complete "${task.id}" --on yesterday`);
+    assert.ok(result.success, 'Should succeed');
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const stamped = result.completed[0].completionDate;
+    assert.strictEqual(localDay(stamped), localDay(yesterday.toISOString()));
+    assert.deepStrictEqual(clockOf(stamped), [12, 0, 0]);
+  });
+
+  it('should treat a bare search bound as the whole day', async () => {
+    const marker = uniqueName('Bounds');
+    const dues = {
+      dayBeforeLate: '2031-07-14T23:30:00',
+      early: '2031-07-15T00:30:00',
+      late: '2031-07-15T23:30:00',
+      dayAfterEarly: '2031-07-16T00:30:00'
+    };
+    const ids = {};
+    for (const [label, due] of Object.entries(dues)) {
+      const task = await runCliJson(`add task "${marker}_${label}" --due "${due}"`);
+      createdItems.tasks.push(task.id);
+      ids[label] = task.id;
+    }
+
+    const found = async (flags) => {
+      const result = await runCliJson(`search "${marker}" ${flags}`);
+      return result.tasks.map(t => t.id).sort();
+    };
+
+    assert.deepStrictEqual(await found('--due-after "2031-07-15" --due-before "2031-07-15"'),
+      [ids.early, ids.late].sort(), 'one day as both bounds returns exactly that day');
+    assert.deepStrictEqual(await found('--due-before "2031-07-15"'),
+      [ids.dayBeforeLate, ids.early, ids.late].sort(), 'before includes the whole of the day named');
+    assert.deepStrictEqual(await found('--due-after "2031-07-15"'),
+      [ids.early, ids.late, ids.dayAfterEarly].sort(), 'after includes the whole of the day named');
+    assert.deepStrictEqual(await found('--due-before "2031-07-15T12:00:00"'),
+      [ids.dayBeforeLate, ids.early].sort(), 'an explicit time is used as given');
+  });
+
+  it('should reject an unparseable search bound instead of ignoring the filter', async () => {
+    const result = await runCli('search --due-before "next friday" --json');
+    const json = result.json || tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid due-before date: next friday/);
+  });
+
+});
+
+// ============================================================================
 // PHASE 10: ENHANCED SEARCH (P2 - NEW)
 // ============================================================================
 
@@ -1079,6 +1323,91 @@ describe('Phase 13: Sync & Miscellaneous', { timeout: TIMEOUT * 2 }, () => {
     const result = await runCli('completion zsh');
     assert.ok(result.success, 'Should succeed');
     assert.ok(result.stdout.includes('compdef'), 'Should output completion script');
+  });
+
+});
+
+// ============================================================================
+// PHASE 13b: MCP DATE PASSTHROUGH
+// ============================================================================
+
+describe('Phase 13b: MCP Date Passthrough', { timeout: TIMEOUT * 12 }, () => {
+
+  let client;
+
+  const call = async (name, args) => {
+    const response = await client.callTool({ name, arguments: args });
+    return JSON.parse(response.content[0].text);
+  };
+
+  before(async () => {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { createMcpServer } = await import('../src/mcp/server.js');
+
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await createMcpServer().connect(serverTransport);
+    client = new Client({ name: 'of-test', version: '0.0.0' });
+    await client.connect(clientTransport);
+  });
+
+  after(async () => {
+    if (client) await client.close();
+  });
+
+  it('should set due and defer dates on task create and update', async () => {
+    const created = await call('omnifocus_task', {
+      action: 'create', name: uniqueName('Mcp_Dates_Task'),
+      due: '2030-05-01T21:45:00', defer: '2030-03-15T13:20:00'
+    });
+    assert.ok(created.success, `Should succeed: ${created.error}`);
+    createdItems.tasks.push(created.id);
+
+    let got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.dueDate, new Date(2030, 4, 1, 21, 45, 0).toISOString(), 'due set on create');
+    assert.strictEqual(got.task.deferDate, new Date(2030, 2, 15, 13, 20, 0).toISOString(), 'defer set on create');
+
+    const updated = await call('omnifocus_task', {
+      action: 'update', id: created.id,
+      due: '2030-06-01T08:05:00', defer: '2030-04-15T10:10:00'
+    });
+    assert.ok(updated.success, `Should succeed: ${updated.error}`);
+
+    got = await runCliJson(`get task "${created.id}"`);
+    assert.strictEqual(got.task.dueDate, new Date(2030, 5, 1, 8, 5, 0).toISOString(), 'due set on update');
+    assert.strictEqual(got.task.deferDate, new Date(2030, 3, 15, 10, 10, 0).toISOString(), 'defer set on update');
+  });
+
+  it('should set due and defer dates on project create and update', async () => {
+    const name = uniqueName('Mcp_Dates_Project');
+    const created = await call('omnifocus_project', {
+      action: 'create', name,
+      due: '2030-05-01T21:45:00', defer: '2030-03-15T13:20:00'
+    });
+    assert.ok(created.success, `Should succeed: ${created.error}`);
+    createdItems.projects.push(name);
+
+    let got = await runCliJson(`get project "${name}"`);
+    assert.strictEqual(got.project.dueDate, new Date(2030, 4, 1, 21, 45, 0).toISOString(), 'due set on create');
+    assert.strictEqual(got.project.deferDate, new Date(2030, 2, 15, 13, 20, 0).toISOString(), 'defer set on create');
+
+    const updated = await call('omnifocus_project', {
+      action: 'update', id: created.project.id,
+      due: '2030-06-01T08:05:00', defer: '2030-04-15T10:10:00'
+    });
+    assert.ok(updated.success, `Should succeed: ${updated.error}`);
+
+    got = await runCliJson(`get project "${name}"`);
+    assert.strictEqual(got.project.dueDate, new Date(2030, 5, 1, 8, 5, 0).toISOString(), 'due set on update');
+    assert.strictEqual(got.project.deferDate, new Date(2030, 3, 15, 10, 10, 0).toISOString(), 'defer set on update');
+  });
+
+  it('should report an unparseable date instead of dropping it', async () => {
+    const name = uniqueName('Mcp_Dates_Invalid');
+    const created = await call('omnifocus_task', { action: 'create', name, defer: 'next friday' });
+    if (created.id) createdItems.tasks.push(created.id);
+    assert.strictEqual(created.success, false, 'Should not report success');
+    assert.match(created.error, /Invalid defer date: next friday/);
   });
 
 });
