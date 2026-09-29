@@ -32,12 +32,14 @@
       const taskId = task.id();
       if (opts.autoSave) {
         qe.save();
+        // Saving empties the panel but leaves it on screen.
+        qe.close();
       }
       const entered = opts.autoSave ? findTask(doc, taskId) : task;
 
       return JSON.stringify({
         success: true,
-        message: "Quick Entry opened with task",
+        message: opts.autoSave ? "Task saved to inbox from Quick Entry" : "Quick Entry opened with task",
         task: entered ? formatTask(entered) : { id: taskId, name: opts.name }
       });
     }

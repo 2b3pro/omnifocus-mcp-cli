@@ -663,6 +663,9 @@ describe('Phase 8: Quick Entry & Inbox', { timeout: TIMEOUT * 4 }, () => {
 
   it('should create and save a task through Quick Entry, with dates', async () => {
     const name = uniqueName('QuickEntry');
+    const panelVisible = () => execFileSync('osascript', ['-l', 'JavaScript', '-e',
+      'Application("OmniFocus").defaultDocument.quickEntry.visible()'],
+      { encoding: 'utf8', timeout: TIMEOUT }).trim() === 'true';
     try {
       const result = await runCliJson(
         `qe "${name}" --due "2030-05-01T21:45:00" --defer "2030-03-15T13:20:00" --flagged --save`);
@@ -676,8 +679,10 @@ describe('Phase 8: Quick Entry & Inbox', { timeout: TIMEOUT * 4 }, () => {
       assert.strictEqual(found[0].flagged, true);
       assert.strictEqual(found[0].dueDate, new Date(2030, 4, 1, 21, 45, 0).toISOString());
       assert.strictEqual(found[0].deferDate, new Date(2030, 2, 15, 13, 20, 0).toISOString());
+      assert.strictEqual(panelVisible(), false, 'the panel should close once the task is saved');
+      assert.strictEqual(result.message, 'Task saved to inbox from Quick Entry');
     } finally {
-      // Saving leaves the panel on screen.
+      // In case the command failed before it could close the panel.
       execFileSync('osascript', ['-l', 'JavaScript', '-e',
         'Application("OmniFocus").defaultDocument.quickEntry.close()'], { timeout: TIMEOUT });
     }
