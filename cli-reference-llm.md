@@ -4,6 +4,48 @@ title: OmniFocus CLI Reference
 
 # OmniFocus CLI Reference
 
+## Conventions
+
+### Dates
+
+Every option of type `(date)` accepts these forms and no others:
+
+| Form | Examples |
+|---|---|
+| Keyword | `today`, `tomorrow`, `yesterday`, `next week` |
+| Weekday, in full or as three letters | `friday`, `fri`, `next friday` |
+| Relative offset, `±N` with `d`/`w`/`m`/`y` | `+3d`, `-2w`, `+1m`, `-1y` |
+| ISO date | `2026-10-01` |
+| ISO timestamp | `2026-10-01T09:30`, `2026-10-01T09:30:00-07:00`, `2026-10-01T16:30:00Z` |
+
+- Anything else is an error, including `10/1/2026`, `Oct 1`, `Jan 15` and
+  `last friday`. Convert such dates to `YYYY-MM-DD` first.
+- A weekday is the first such day after today. `friday` given on a Friday is
+  seven days away. `next friday` means the same as `friday`. For the Friday
+  of the following week, give the date.
+- A timestamp without an offset is local time.
+
+A date given without a time of day takes a default time that depends on the
+option:
+
+| Option | Time given to a bare date |
+|---|---|
+| `--due` | The user's default due time in OmniFocus (factory default 17:00) |
+| `--defer` | The user's default defer time in OmniFocus (factory default 00:00) |
+| `--planned` | The user's default planned time in OmniFocus (factory default 09:00) |
+| `--on` (complete) | 12:00, or the current time if the day is today |
+| `--due-after` | 00:00, the start of that day |
+| `--due-before` | 23:59:59, the end of that day |
+
+To set a specific time, give a timestamp: `--defer 2026-10-01T06:00`.
+
+### Failures
+
+A command that fails exits non-zero. With `--json` it still prints its result
+on stdout, with `"success": false` and an `error` string or an `errors` list.
+When a date or a name in the command is rejected, nothing is created or
+modified.
+
 ### `of summary`
 
 Show a summary of the database.
@@ -79,8 +121,8 @@ Search for tasks by name, note, or filters.
 - `--tag`, `-t` (string): Filter by tag
 - `--flagged`, `-f` (boolean): Only flagged tasks
 - `--available` (boolean): Only available tasks
-- `--due-before` (date): Due before date
-- `--due-after` (date): Due after date
+- `--due-before` (date): Due on or before date (a bare date includes that whole day)
+- `--due-after` (date): Due on or after date (a bare date includes that whole day)
 
 ### `of list projects`
 
