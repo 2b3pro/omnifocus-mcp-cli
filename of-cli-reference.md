@@ -48,7 +48,8 @@ Notes:
   answers "can I?"; planned answers "will I?".
 - **Due is not a priority proxy.** Fake deadlines erode the due list until real
   ones stop registering. Use the flag for urgency instead.
-- Date arguments accept `today`, `tomorrow`, `friday`, `+3d`, `2026-01-15`.
+- Date arguments accept `today`, `tomorrow`, `friday`, `+3d`, `2026-01-15`, `2026-01-15T09:30`. Other forms are an error.
+- A command that fails exits non-zero.
 - Relative `--*-by` offsets accept `<±n><d|w|m>` and adjust the *existing*
   value (falling back to now if unset).
 - Pass `""` to clear a date: `of modify abc123 --planned ""`.
