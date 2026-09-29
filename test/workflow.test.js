@@ -90,6 +90,18 @@ async function runCliJson(args, options = {}) {
   return result.json;
 }
 
+/**
+ * Execute a CLI command that is expected to fail: it must exit non-zero and
+ * still print its JSON result, which is returned.
+ */
+async function runCliFailing(args, options = {}) {
+  const result = await runCli(`${args} --json`, options);
+  assert.strictEqual(result.success, false, `Should exit non-zero: of ${args}`);
+  const json = tryParseJson(result.stdout);
+  assert.ok(json, `Should still print JSON: of ${args} printed ${result.stdout || result.stderr}`);
+  return json;
+}
+
 function tryParseJson(str) {
   try {
     return JSON.parse(str);
@@ -264,7 +276,7 @@ describe('Phase 2b: Folder Deletion', { timeout: TIMEOUT * 12 }, () => {
     await runCliJson(`add project "${projectName}" --folder "${folderName}"`);
     createdItems.projects.push(projectName);
 
-    const result = await runCliJson(`folder delete "${folderName}"`);
+    const result = await runCliFailing(`folder delete "${folderName}"`);
     assert.strictEqual(result.success, false, 'Should not report success');
     assert.strictEqual(result.deleted.length, 0, 'Should delete nothing');
     assert.ok(result.refused && result.refused.length === 1, 'Should report a refusal');
@@ -298,7 +310,7 @@ describe('Phase 2b: Folder Deletion', { timeout: TIMEOUT * 12 }, () => {
   });
 
   it('should error cleanly on a nonexistent folder', async () => {
-    const result = await runCliJson('folder delete "CLI_Test_no_such_folder_xyz"');
+    const result = await runCliFailing('folder delete "CLI_Test_no_such_folder_xyz"');
     assert.strictEqual(result.success, false, 'Should not succeed');
     assert.ok(result.errors && /not found/i.test(result.errors[0].error), 'Should say not found');
   });
@@ -306,7 +318,7 @@ describe('Phase 2b: Folder Deletion', { timeout: TIMEOUT * 12 }, () => {
   it('should surface not-found in --dry-run too, not report silent success', async () => {
     // Regression: dry-run returned {success:true, wouldDelete:[]} and dropped
     // the errors array, so a typo'd name looked like "nothing to do".
-    const result = await runCliJson('folder delete "CLI_Test_no_such_folder_xyz" --dry-run');
+    const result = await runCliFailing('folder delete "CLI_Test_no_such_folder_xyz" --dry-run');
     assert.strictEqual(result.dryRun, true, 'Should be a dry run');
     assert.strictEqual(result.success, false, 'Must NOT claim success for a name that does not exist');
     assert.ok(result.errors && /not found/i.test(result.errors[0].error), 'Should report not found');
@@ -647,7 +659,29 @@ describe('Phase 7: Views & Perspectives', { timeout: TIMEOUT * 2 }, () => {
 // PHASE 8: QUICK ENTRY & INBOX
 // ============================================================================
 
-describe('Phase 8: Quick Entry & Inbox', { timeout: TIMEOUT * 2 }, () => {
+describe('Phase 8: Quick Entry & Inbox', { timeout: TIMEOUT * 4 }, () => {
+
+  it('should create and save a task through Quick Entry, with dates', async () => {
+    const name = uniqueName('QuickEntry');
+    try {
+      const result = await runCliJson(
+        `qe "${name}" --due "2030-05-01T21:45:00" --defer "2030-03-15T13:20:00" --flagged --save`);
+      assert.ok(result.success, 'Should succeed');
+      if (result.task && result.task.id) createdItems.tasks.push(result.task.id);
+
+      const found = (await runCliJson(`search "${name}"`)).tasks;
+      for (const task of found) createdItems.tasks.push(task.id);
+      assert.strictEqual(found.length, 1, 'the task should be saved to the inbox');
+      assert.strictEqual(found[0].inInbox, true);
+      assert.strictEqual(found[0].flagged, true);
+      assert.strictEqual(found[0].dueDate, new Date(2030, 4, 1, 21, 45, 0).toISOString());
+      assert.strictEqual(found[0].deferDate, new Date(2030, 2, 15, 13, 20, 0).toISOString());
+    } finally {
+      // Saving leaves the panel on screen.
+      execFileSync('osascript', ['-l', 'JavaScript', '-e',
+        'Application("OmniFocus").defaultDocument.quickEntry.close()'], { timeout: TIMEOUT });
+    }
+  });
 
   it('should quick add to inbox', async () => {
     const name = uniqueName('Quick');
@@ -1404,7 +1438,9 @@ describe('Phase 12: Complete/Drop/Delete', { timeout: TIMEOUT * 3 }, () => {
 describe('Phase 13: Sync & Miscellaneous', { timeout: TIMEOUT * 2 }, () => {
 
   it('should trigger sync', async () => {
-    const result = await runCliJson('sync');
+    const cli = await runCli('sync --json');
+    const result = tryParseJson(cli.stdout);
+    assert.ok(result, `Should print JSON: ${cli.stdout || cli.stderr}`);
     // OmniFocus refuses a sync that comes too soon after another, and every
     // phase before this one has been writing. That refusal is OmniFocus
     // answering the request, so it counts as the command working.
@@ -1794,6 +1830,67 @@ describe('Phase 14: Error Handling', { timeout: TIMEOUT * 3 }, () => {
   it('should handle invalid command', async () => {
     const result = await runCli('invalidcommand');
     assert.ok(!result.success || result.stderr, 'Should fail for invalid command');
+  });
+
+});
+
+// ============================================================================
+// PHASE 14b: EXIT STATUS
+// ============================================================================
+// Its own block: each lookup of a missing item scans the database, and there
+// is one per command family here.
+
+describe('Phase 14b: Exit Status', { timeout: TIMEOUT * 12 }, () => {
+
+  it('should exit non-zero whenever a command reports a failure', async () => {
+    const missing = 'CLI_Test_no_such_item_xyz';
+    const commands = [
+      // One or two per command file; they share the rule in print().
+      `get task "${missing}"`,
+      `get project "${missing}"`,
+      `drop "${missing}"`,
+      `delete "${missing}"`,
+      `complete "${missing}"`,
+      `modify "${missing}" --name "X"`,
+      `folder delete "${missing}"`,
+      `tag delete "${missing}"`,
+      `tag tasks "${missing}"`,
+      `project complete "${missing}"`,
+      `project delete "${missing}"`,
+      `add task "${missing}" --project "${missing}"`,
+      `search "x" --project "${missing}"`
+    ];
+    for (const command of commands) {
+      const json = await runCliFailing(command);
+      assert.strictEqual(json.success, false, `${command}: should not report success`);
+      assert.ok(json.error || json.errors, `${command}: should say what failed`);
+    }
+  });
+
+  it('should keep exit status zero when a command succeeds', async () => {
+    for (const command of ['list inbox --limit 1', 'list tags --limit 1', `search "${'CLI_Test_no_such_item_xyz'}"`]) {
+      const result = await runCli(`${command} --json`);
+      assert.strictEqual(result.success, true, `${command}: should exit zero`);
+    }
+  });
+
+  it('should report the tasks a flag command could not change', async () => {
+    const task = await runCliJson(`add task "${uniqueName('Flag_Partial')}"`);
+    createdItems.tasks.push(task.id);
+
+    const json = await runCliFailing(`flag "${task.id}" "CLI_Test_no_such_item_xyz"`);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.strictEqual(json.message, '1 task(s) flagged');
+    assert.deepStrictEqual(json.errors.map(e => e.id), ['CLI_Test_no_such_item_xyz']);
+    assert.strictEqual((await runCliJson(`get task "${task.id}"`)).task.flagged, true, 'the real task is flagged');
+
+    const human = await runCli(`unflag "${task.id}" "CLI_Test_no_such_item_xyz"`);
+    assert.strictEqual(human.success, false, 'Should exit non-zero');
+    assert.match(human.stderr, /1 task\(s\) unflagged, 1 failed: CLI_Test_no_such_item_xyz/);
+
+    const ok = await runCliJson(`flag "${task.id}"`);
+    assert.strictEqual(ok.success, true);
+    assert.strictEqual(ok.message, '1 task(s) flagged');
   });
 
 });

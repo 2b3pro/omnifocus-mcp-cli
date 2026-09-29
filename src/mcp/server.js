@@ -6,12 +6,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
-import { runJxa, isOmniFocusRunning } from '../jxa-runner.js';
+import { runJxa as runJxaScript, isOmniFocusRunning } from '../jxa-runner.js';
 
 /**
  * Create and configure the MCP server with consolidated OmniFocus tools
+ * @param {object} [deps] - `runJxa` replaces the script runner, so the
+ *   arguments each tool sends can be checked without OmniFocus
  */
-export function createMcpServer() {
+export function createMcpServer(deps = {}) {
+  const runJxa = deps.runJxa || runJxaScript;
   const server = new McpServer({
     name: 'omnifocus',
     version: '1.0.0'
@@ -61,20 +64,17 @@ complete/drop/delete: ids[] (required)`,
           if (view === 'inbox') {
             result = await runJxa('read', 'listInbox', [JSON.stringify({
               limit: args.limit || 50,
-              includeCompleted: args.include_completed || false,
-              full: true
+              includeCompleted: args.include_completed || false
             })]);
           } else if (view === 'today') {
             result = await runJxa('read', 'listToday', [JSON.stringify({
               limit: args.limit || 50,
-              includeFlagged: args.flagged || false,
-              full: true
+              includeFlagged: args.flagged || false
             })]);
           } else if (view === 'flagged') {
             result = await runJxa('read', 'listFlagged', [JSON.stringify({
               limit: args.limit || 50,
-              includeCompleted: args.include_completed || false,
-              full: true
+              includeCompleted: args.include_completed || false
             })]);
           } else if (view === 'forecast') {
             result = await runJxa('read', 'getForecast', [JSON.stringify({

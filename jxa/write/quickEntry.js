@@ -17,25 +17,28 @@
 
     // If a task name is provided, create the task
     if (opts.name) {
-      const task = app.make({
-        new: "inbox task",
-        at: qe.inboxTasks.end,
-        withProperties: { name: opts.name }
-      });
+      // app.make({ new: "inbox task", at: qe.inboxTasks.end }) fails with
+      // "Can't make class."; pushing onto the panel's own list works.
+      const task = app.InboxTask({ name: opts.name });
+      qe.inboxTasks.push(task);
 
       if (opts.note) task.note = opts.note;
       if (due) task.dueDate = due;
       if (defer) task.deferDate = defer;
       if (opts.flagged) task.flagged = true;
 
+      // Saving moves the task from the panel to the inbox, after which the
+      // panel's reference to it no longer resolves. Its id does not change.
+      const taskId = task.id();
       if (opts.autoSave) {
         qe.save();
       }
+      const entered = opts.autoSave ? findTask(doc, taskId) : task;
 
       return JSON.stringify({
         success: true,
         message: "Quick Entry opened with task",
-        task: formatTask(task)
+        task: entered ? formatTask(entered) : { id: taskId, name: opts.name }
       });
     }
 
