@@ -6,6 +6,35 @@
 import { runJxa, requireOmniFocus, runAppleScript } from '../jxa-runner.js';
 import { print, printError } from '../output.js';
 
+/**
+ * Flag or unflag each task, reporting the ones that failed instead of
+ * counting every task given as done.
+ */
+async function setFlagged(taskIds, flagged) {
+  const results = [];
+  const errors = [];
+  for (const taskId of taskIds) {
+    const result = await runJxa('write', 'modifyTask', [taskId, JSON.stringify({ flagged })]);
+    results.push(result);
+    if (!result || result.success === false) {
+      errors.push({ id: taskId, error: (result && result.error) || 'Unknown error' });
+    }
+  }
+
+  const verb = flagged ? 'flagged' : 'unflagged';
+  const message = `${taskIds.length - errors.length} task(s) ${verb}`;
+  if (errors.length === 0) {
+    return { success: true, message, results };
+  }
+  return {
+    success: false,
+    message,
+    error: `${message}, ${errors.length} failed: ${errors.map(e => `${e.id} (${e.error})`).join(', ')}`,
+    results,
+    errors
+  };
+}
+
 export function registerModifyCommand(program) {
   program
     .command('modify <taskId>')
@@ -62,11 +91,6 @@ Examples:
         opts.dryRun = options.dryRun || false;
         const result = await runJxa('write', 'modifyTask', [taskId, JSON.stringify(opts)]);
         print(result, options);
-        // runJxa reports script failures as { success: false } instead of
-        // throwing — without this the command printed the error yet exited 0.
-        if (!result || result.success === false) {
-          process.exit(1);
-        }
       } catch (err) {
         printError(err.message);
         process.exit(1);
@@ -87,16 +111,7 @@ Examples:
     .action(async (taskIds, options) => {
       try {
         await requireOmniFocus();
-        const results = [];
-        for (const taskId of taskIds) {
-          const result = await runJxa('write', 'modifyTask', [taskId, JSON.stringify({ flagged: true })]);
-          results.push(result);
-        }
-        if (options.json) {
-          console.log(JSON.stringify({ success: true, results }));
-        } else {
-          console.log(`${taskIds.length} task(s) flagged`);
-        }
+        print(await setFlagged(taskIds, true), options);
       } catch (err) {
         printError(err.message);
         process.exit(1);
@@ -117,16 +132,7 @@ Examples:
     .action(async (taskIds, options) => {
       try {
         await requireOmniFocus();
-        const results = [];
-        for (const taskId of taskIds) {
-          const result = await runJxa('write', 'modifyTask', [taskId, JSON.stringify({ flagged: false })]);
-          results.push(result);
-        }
-        if (options.json) {
-          console.log(JSON.stringify({ success: true, results }));
-        } else {
-          console.log(`${taskIds.length} task(s) unflagged`);
-        }
+        print(await setFlagged(taskIds, false), options);
       } catch (err) {
         printError(err.message);
         process.exit(1);

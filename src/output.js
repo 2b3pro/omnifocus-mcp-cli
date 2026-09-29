@@ -8,6 +8,13 @@
  * @param {object} options - Formatting options
  */
 export function print(result, options = {}) {
+  // runJxa reports script failures as { success: false } instead of throwing,
+  // so without this a command prints the error and still exits 0. exitCode,
+  // not exit(): the output below must be written before the process ends.
+  if (!result || result.success === false) {
+    process.exitCode = 1;
+  }
+
   if (options.json || options.pretty) {
     const indent = options.pretty ? 2 : 0;
     console.log(JSON.stringify(result, null, indent));
@@ -57,18 +64,6 @@ export function print(result, options = {}) {
     console.log(result.message);
   } else {
     console.log(JSON.stringify(result, null, 2));
-  }
-}
-
-/**
- * Exit non-zero if a script reported failure. runJxa returns script failures
- * as { success: false } instead of throwing, so a command that only prints
- * the result exits 0 on an error.
- * @param {object} result - The result object from runJxa
- */
-export function exitOnFailure(result) {
-  if (!result || result.success === false) {
-    process.exit(1);
   }
 }
 

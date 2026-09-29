@@ -4,7 +4,7 @@
  */
 
 import { runJxa, requireOmniFocus } from '../jxa-runner.js';
-import { print, printError, exitOnFailure } from '../output.js';
+import { print, printError } from '../output.js';
 
 export function registerProjectCommand(program) {
   const project = program
@@ -240,7 +240,6 @@ Examples:
 
         const result = await runJxa('write', 'modifyProject', [nameOrId, JSON.stringify(opts)]);
         print(result, options);
-        exitOnFailure(result);
       } catch (err) {
         printError(err.message);
         process.exit(1);

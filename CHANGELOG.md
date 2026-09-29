@@ -42,9 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   JavaScript engine's own parser, which stored `10/1/2026` at midnight
   whatever the field and read `Oct 1` as the year 2000. It is now an error
   that names the accepted forms.
-- `add`, `add project`, `quick`, `project modify`, `qe`, `complete` and
-  `search` exit non-zero when the script reports a failure, as `modify`
-  already did. They previously printed the error and exited 0.
+- Every command exits non-zero when it reports a failure. Before, only
+  `modify` did; the rest printed the error and exited 0, so a script could
+  not tell a failed `of add` or `of delete` from a successful one without
+  parsing the output.
+- `of flag` and `of unflag` report the tasks they could not change. They
+  previously printed "N task(s) flagged" for every id given, and
+  `"success": true` in JSON, whether or not the task existed.
 
 ### Fixed
 
@@ -54,6 +58,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   future when run earlier in the day.
 - `of list forecast` grouped tasks by their UTC day, so a task due in the
   evening was listed under the following day in timezones west of UTC.
+- `of qe "name"` failed with "Can't make class." and created nothing. With
+  `--save` it now creates the task, saves it to the inbox and returns it.
 - MCP: `due` and `defer` on task and project `create`/`update` were silently
   dropped.
 - MCP: other options were sent under names the scripts do not read, so they

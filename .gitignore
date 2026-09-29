@@ -44,3 +44,4 @@ test*
 !test/
 test/*
 !test/parse-date.test.js
+!test/mcp-contract.test.js
