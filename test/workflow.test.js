@@ -918,10 +918,10 @@ describe('Phase 9c: Date Defaults, Validation & Forecast', { timeout: TIMEOUT * 
 
   it('should reject an unparseable date on add and create nothing', async () => {
     const name = uniqueName('DateInvalid_Add');
-    const result = await runCli(`add task "${name}" --defer "next friday" --json`);
+    const result = await runCli(`add task "${name}" --defer "last friday" --json`);
     const json = result.json || tryParseJson(result.stdout);
     assert.strictEqual(json.success, false, 'Should not report success');
-    assert.match(json.error, /Invalid defer date: next friday/);
+    assert.match(json.error, /Invalid defer date: last friday/);
 
     const found = await runCliJson(`search "${name}" --all`);
     for (const task of found.tasks) createdItems.tasks.push(task.id);
@@ -1003,6 +1003,55 @@ describe('Phase 9c: Date Defaults, Validation & Forecast', { timeout: TIMEOUT * 
     assert.strictEqual(dayOf(early.id), key, 'early-morning task listed under its local day');
   });
 
+  it('should accept weekday names on the CLI and through MCP', async () => {
+    const daysAhead = (iso) => {
+      const d = new Date(iso);
+      const now = new Date();
+      const startOf = (x) => new Date(x.getFullYear(), x.getMonth(), x.getDate()).getTime();
+      return Math.round((startOf(d) - startOf(now)) / 86400000);
+    };
+    const check = (iso, weekday, clock, label) => {
+      assert.ok(iso, `${label}: date should be set`);
+      assert.strictEqual(new Date(iso).getDay(), weekday, `${label}: weekday`);
+      assert.ok(daysAhead(iso) >= 1 && daysAhead(iso) <= 7, `${label}: ${daysAhead(iso)} days ahead`);
+      assert.deepStrictEqual(clockOf(iso), clock, `${label}: default time`);
+    };
+
+    const created = await runCliJson(
+      `add task "${uniqueName('Weekday_Add')}" --due friday --defer "next monday" --planned wed`);
+    createdItems.tasks.push(created.id);
+    let got = await runCliJson(`get task "${created.id}"`);
+    check(got.task.dueDate, 5, expected.due, 'add --due friday');
+    check(got.task.deferDate, 1, expected.defer, 'add --defer "next monday"');
+    check(got.task.plannedDate, 3, expected.planned, 'add --planned wed');
+
+    const modified = await runCliJson(`modify "${created.id}" --due "Next Sunday"`);
+    assert.ok(modified.success, 'Should succeed');
+    got = await runCliJson(`get task "${created.id}"`);
+    check(got.task.dueDate, 0, expected.due, 'modify --due "Next Sunday"');
+
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { InMemoryTransport } = await import('@modelcontextprotocol/sdk/inMemory.js');
+    const { createMcpServer } = await import('../src/mcp/server.js');
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await createMcpServer().connect(serverTransport);
+    const client = new Client({ name: 'of-test', version: '0.0.0' });
+    await client.connect(clientTransport);
+    try {
+      const response = await client.callTool({ name: 'omnifocus_task', arguments: {
+        action: 'create', name: uniqueName('Weekday_Mcp'), due: 'friday', defer: 'next monday'
+      } });
+      const viaMcp = JSON.parse(response.content[0].text);
+      assert.ok(viaMcp.success, `Should succeed: ${viaMcp.error}`);
+      createdItems.tasks.push(viaMcp.id);
+      got = await runCliJson(`get task "${viaMcp.id}"`);
+      check(got.task.dueDate, 5, expected.due, 'MCP due: friday');
+      check(got.task.deferDate, 1, expected.defer, 'MCP defer: next monday');
+    } finally {
+      await client.close();
+    }
+  });
+
   it('should stamp the current time for a completion dated today', async () => {
     const task = await runCliJson(`add task "${uniqueName('Complete_Today')}"`);
     createdItems.tasks.push(task.id);
@@ -1063,10 +1112,10 @@ describe('Phase 9c: Date Defaults, Validation & Forecast', { timeout: TIMEOUT * 
   });
 
   it('should reject an unparseable search bound instead of ignoring the filter', async () => {
-    const result = await runCli('search --due-before "next friday" --json');
+    const result = await runCli('search --due-before "last friday" --json');
     const json = result.json || tryParseJson(result.stdout);
     assert.strictEqual(json.success, false, 'Should not report success');
-    assert.match(json.error, /Invalid due-before date: next friday/);
+    assert.match(json.error, /Invalid due-before date: last friday/);
   });
 
   it('should exit non-zero and change nothing when any command rejects a date', async () => {
@@ -1454,10 +1503,10 @@ describe('Phase 13b: MCP Date Passthrough', { timeout: TIMEOUT * 12 }, () => {
 
   it('should report an unparseable date instead of dropping it', async () => {
     const name = uniqueName('Mcp_Dates_Invalid');
-    const created = await call('omnifocus_task', { action: 'create', name, defer: 'next friday' });
+    const created = await call('omnifocus_task', { action: 'create', name, defer: 'last friday' });
     if (created.id) createdItems.tasks.push(created.id);
     assert.strictEqual(created.success, false, 'Should not report success');
-    assert.match(created.error, /Invalid defer date: next friday/);
+    assert.match(created.error, /Invalid defer date: last friday/);
   });
 
 });

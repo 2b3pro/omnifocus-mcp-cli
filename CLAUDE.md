@@ -59,7 +59,9 @@ All JXA scripts use shared helpers from `jxa/utils/helpers.js` (auto-prepended):
 // Get app/doc: const app = getApp(); const doc = getDoc(app);
 // Find entities: findProject(doc, nameOrId), findTag(), findFolder(), findTask()
 // Format output: formatTask(task), formatProject(), formatFolder(), formatTag()
-// Parse dates: parseDate(str) — supports "today", "tomorrow", "+3d", "+1w", ISO
+// Parse dates: parseDate(str, field) — supports "today", "tomorrow", "friday", "+3d", "+1w", ISO
+//   field ("due", "defer", "planned") picks the time of day for a date given without one
+// On write paths use requireDate(str, field), which throws on a date that does not parse
 
 // Scripts MUST return JSON via: JSON.stringify({ success: true, ... })
 ```
@@ -87,7 +89,7 @@ export function registerXxxCommand(program) {
 
 - **Output modes**: All commands support `--json`, `--pretty`, `--quiet` via `print(result, options)`
 - **Dry-run**: Write operations support `--dry-run` flag, scripts check `opts.dryRun`
-- **Date parsing**: Natural dates ("today", "tomorrow", "+3d", "+1w") handled in JXA `parseDate()`
+- **Date parsing**: Natural dates ("today", "tomorrow", "friday", "+3d", "+1w") handled in JXA `parseDate()`. A date without a time takes OmniFocus's default time for the field; a date that does not parse is an error
 - **Error handling**: JXA scripts return `{ success: false, error: "message" }`
 - **Entity lookup**: Scripts accept name or ID; `findProject/Tag/Folder/Task` try ID first, then name
 - **ES Modules**: Project uses `"type": "module"` — use `import/export`, not `require`

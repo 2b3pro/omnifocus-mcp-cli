@@ -561,6 +561,9 @@ const FIXED_DEFAULT_TIMES = {
 // parseDate() without a field keeps the 5pm it has always used.
 const UNSPECIFIED_DEFAULT_TIME = [17, 0, 0];
 
+// Indexed as Date.getDay() numbers them.
+const WEEKDAY_NAMES = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+
 let defaultTimesCache = null;
 
 /**
@@ -614,8 +617,9 @@ function defaultTimeFor(field) {
  * rest to `new Date()` gave answers that differ by engine ("Oct 1" is the
  * year 2000 in JXA and 2001 in Node) and ignored the field's default time.
  * @param {string} dateStr - "today", "tomorrow", "yesterday", "next week",
- *   "+3d", "-2w", "YYYY-MM-DD", or an ISO timestamp "YYYY-MM-DDTHH:MM[:SS]"
- *   with an optional "Z" or "+HH:MM" offset
+ *   a weekday ("friday", "fri", "next friday"), "+3d", "-2w", "YYYY-MM-DD",
+ *   or an ISO timestamp "YYYY-MM-DDTHH:MM[:SS]" with an optional "Z" or
+ *   "+HH:MM" offset
  * @param {string} [field] - picks the time of day for input that has none.
  *   "due", "defer", "planned": what OmniFocus uses for that field.
  *   "after", "before": start and end of the day, for search bounds.
@@ -653,6 +657,24 @@ function parseDate(dateStr, field) {
     const d = new Date(now);
     d.setDate(d.getDate() - 1);
     return atDefaultTime(d);
+  }
+
+  // Weekday names, in full or as three letters: the first such day after
+  // today, so "friday" said on a Friday is a week away. "next friday" is read
+  // the same way. English also uses it for the Friday of the following week,
+  // and of the two readings this one errs early: a date that turns out a week
+  // too soon gets noticed, one a week too late does not.
+  const weekdayMatch = lowerDate.match(/^(?:next\s+)?([a-z]+)$/);
+  if (weekdayMatch) {
+    let weekday = -1;
+    for (let i = 0; i < WEEKDAY_NAMES.length; i++) {
+      if (weekdayMatch[1] === WEEKDAY_NAMES[i] || weekdayMatch[1] === WEEKDAY_NAMES[i].slice(0, 3)) weekday = i;
+    }
+    if (weekday !== -1) {
+      const d = new Date(now);
+      d.setDate(d.getDate() + (((weekday - d.getDay() + 7) % 7) || 7));
+      return atDefaultTime(d);
+    }
   }
 
   // Relative offsets: [+-]N[dwmy] — "+3d", "-2w", "+1m", "-1y".
@@ -743,7 +765,8 @@ function requireDate(dateStr, field, label) {
   if (!parsed) {
     throw new Error(
       "Invalid " + (label || field) + " date: " + dateStr + ". Expected today, tomorrow, " +
-      "yesterday, next week, an offset such as +3d or -2w, YYYY-MM-DD, or YYYY-MM-DDTHH:MM."
+      "yesterday, next week, a weekday such as friday, an offset such as +3d or -2w, " +
+      "YYYY-MM-DD, or YYYY-MM-DDTHH:MM."
     );
   }
   return parsed;

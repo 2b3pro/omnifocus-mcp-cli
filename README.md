@@ -117,9 +117,14 @@ Date flags accept these forms and no others:
 | Form | Examples |
 |---|---|
 | Keyword | `today`, `tomorrow`, `yesterday`, `next week` |
+| Weekday, in full or as three letters | `friday`, `fri`, `next friday` |
 | Relative offset, `±N` with `d`/`w`/`m`/`y` | `+3d`, `-2w`, `+1m`, `-1y` |
 | ISO date | `2026-10-01` |
 | ISO timestamp | `2026-10-01T09:30`, `2026-10-01T09:30:00-07:00`, `2026-10-01T16:30:00Z` |
+
+A weekday is the first such day after today, so `friday` typed on a Friday
+is a week away. `next friday` means the same as `friday`; for the Friday of
+the following week, give the date.
 
 ISO timestamps retain their specified time and timezone offset. A timestamp
 without an offset is local time.
@@ -147,7 +152,7 @@ Dates that are not one of those fields have fixed rules:
 So `of search --due-after 2026-10-01 --due-before 2026-10-01` returns
 everything due on October 1.
 
-Anything else, such as `10/1/2026`, `Oct 1` or `next friday`, is an error:
+Anything else, such as `10/1/2026`, `Oct 1` or `last friday`, is an error:
 the command exits non-zero and nothing is created, modified, or searched.
 
 ```bash

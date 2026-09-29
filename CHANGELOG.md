@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Weekday names on every date flag, in full or as three letters: `friday`,
+  `fri`, `next friday`. A weekday is the first such day after today, and
+  `next friday` means the same as `friday`. The date takes the field's
+  default time like any other date without one.
+
 ### Changed
 
 - Dates given without a time of day (`2026-10-01`, `today`, `+3d`) now take
