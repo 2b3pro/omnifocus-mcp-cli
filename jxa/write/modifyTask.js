@@ -30,6 +30,19 @@
       }
     }
 
+    // Likewise resolve tags up front, so an unknown tag changes nothing.
+    let tags = null;
+    if (Array.isArray(opts.tags)) {
+      tags = [];
+      for (const tagName of opts.tags) {
+        const tag = findTag(doc, tagName);
+        if (!tag) {
+          return JSON.stringify({ success: false, error: "Tag not found: " + tagName });
+        }
+        tags.push(tag);
+      }
+    }
+
     // Dry run mode
     if (opts.dryRun) {
       const current = formatTask(task);
@@ -41,6 +54,7 @@
       if (opts.plannedDate !== undefined) changes.plannedDate = { from: current.plannedDate, to: opts.plannedDate };
       if (opts.flagged !== undefined) changes.flagged = { from: current.flagged, to: opts.flagged };
       if (opts.tag !== undefined) changes.tag = { to: opts.tag };
+      if (tags) changes.tags = { from: current.tags, to: opts.tags };
       if (opts.project !== undefined) changes.project = { to: opts.project };
       if (opts.estimatedMinutes !== undefined) changes.estimatedMinutes = { from: current.estimatedMinutes, to: opts.estimatedMinutes };
 
@@ -176,6 +190,19 @@
       } else {
         const tag = findTag(doc, opts.tag);
         if (tag) task.primaryTag = tag;
+      }
+    }
+
+    // Replace the task's tags with the given set ([] clears them)
+    if (tags) {
+      const wanted = tags.map(tag => tag.id());
+      const current = task.tags();
+      const have = current.map(tag => tag.id());
+      for (const tag of current) {
+        if (wanted.indexOf(tag.id()) === -1) app.remove(tag, { from: task.tags });
+      }
+      for (const tag of tags) {
+        if (have.indexOf(tag.id()) === -1) app.add(tag, { to: task.tags });
       }
     }
 

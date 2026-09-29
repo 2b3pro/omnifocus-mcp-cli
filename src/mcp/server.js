@@ -61,19 +61,19 @@ complete/drop/delete: ids[] (required)`,
           if (view === 'inbox') {
             result = await runJxa('read', 'listInbox', [JSON.stringify({
               limit: args.limit || 50,
-              all: args.include_completed || false,
+              includeCompleted: args.include_completed || false,
               full: true
             })]);
           } else if (view === 'today') {
             result = await runJxa('read', 'listToday', [JSON.stringify({
               limit: args.limit || 50,
-              flagged: args.flagged || false,
+              includeFlagged: args.flagged || false,
               full: true
             })]);
           } else if (view === 'flagged') {
             result = await runJxa('read', 'listFlagged', [JSON.stringify({
               limit: args.limit || 50,
-              all: args.include_completed || false,
+              includeCompleted: args.include_completed || false,
               full: true
             })]);
           } else if (view === 'forecast') {
@@ -89,7 +89,7 @@ complete/drop/delete: ids[] (required)`,
                 flagged: args.flagged,
                 dueBefore: args.due_before,
                 dueAfter: args.due_after,
-                all: args.include_completed || false,
+                includeCompleted: args.include_completed || false,
                 limit: args.limit || 50
               })
             ]);
@@ -116,7 +116,7 @@ complete/drop/delete: ids[] (required)`,
               dueDate: args.due,
               deferDate: args.defer,
               flagged: args.flagged,
-              estimate: args.estimate_mins
+              estimatedMinutes: args.estimate_mins
             })
           ]);
           return ok(result);
@@ -134,7 +134,7 @@ complete/drop/delete: ids[] (required)`,
               flagged: args.flagged,
               project: args.project,
               tags: args.tags,
-              estimate: args.estimate_mins
+              estimatedMinutes: args.estimate_mins
             })
           ]);
           return ok(result);
@@ -143,21 +143,21 @@ complete/drop/delete: ids[] (required)`,
         case 'complete': {
           const taskIds = args.ids || (args.id ? [args.id] : null);
           if (!taskIds?.length) return err('ids required');
-          const result = await runJxa('write', 'completeTask', [...taskIds, JSON.stringify({})]);
+          const result = await runJxa('write', 'completeTask', [taskIds.join(','), JSON.stringify({})]);
           return ok(result);
         }
 
         case 'drop': {
           const taskIds = args.ids || (args.id ? [args.id] : null);
           if (!taskIds?.length) return err('ids required');
-          const result = await runJxa('write', 'dropTask', [...taskIds, JSON.stringify({})]);
+          const result = await runJxa('write', 'dropTask', [taskIds.join(','), JSON.stringify({})]);
           return ok(result);
         }
 
         case 'delete': {
           const taskIds = args.ids || (args.id ? [args.id] : null);
           if (!taskIds?.length) return err('ids required');
-          const result = await runJxa('write', 'deleteTask', [...taskIds, JSON.stringify({})]);
+          const result = await runJxa('write', 'deleteTask', [taskIds.join(','), JSON.stringify({})]);
           return ok(result);
         }
 
@@ -204,8 +204,8 @@ set_status: id (required), status=active|on_hold`,
         case 'list': {
           const result = await runJxa('read', 'listProjects', [JSON.stringify({
             folder: args.folder,
-            all: args.include_completed || false,
-            onHold: args.include_on_hold || false,
+            includeCompleted: args.include_completed || false,
+            includeOnHold: args.include_on_hold || false,
             limit: args.limit || 100
           })]);
           return ok(result);
@@ -222,7 +222,7 @@ set_status: id (required), status=active|on_hold`,
           const result = await runJxa('read', 'listProjectTasks', [
             args.id,
             JSON.stringify({
-              all: args.include_completed || false,
+              includeCompleted: args.include_completed || false,
               limit: args.limit || 100
             })
           ]);
@@ -250,7 +250,6 @@ set_status: id (required), status=active|on_hold`,
           const result = await runJxa('write', 'modifyProject', [
             args.id,
             JSON.stringify({
-              action: 'modify',
               name: args.name,
               dueDate: args.due,
               deferDate: args.defer,
@@ -265,7 +264,7 @@ set_status: id (required), status=active|on_hold`,
           if (!args.id) return err('id required');
           const result = await runJxa('write', 'modifyProject', [
             args.id,
-            JSON.stringify({ action: 'complete' })
+            JSON.stringify({ complete: true })
           ]);
           return ok(result);
         }
@@ -274,7 +273,7 @@ set_status: id (required), status=active|on_hold`,
           if (!args.id) return err('id required');
           const result = await runJxa('write', 'modifyProject', [
             args.id,
-            JSON.stringify({ action: 'drop' })
+            JSON.stringify({ drop: true })
           ]);
           return ok(result);
         }
@@ -282,10 +281,9 @@ set_status: id (required), status=active|on_hold`,
         case 'set_status': {
           if (!args.id) return err('id required');
           if (!args.status) return err('status required (active|on_hold)');
-          const actionMap = { active: 'activate', on_hold: 'hold' };
           const result = await runJxa('write', 'modifyProject', [
             args.id,
-            JSON.stringify({ action: actionMap[args.status] || args.status })
+            JSON.stringify(args.status === 'on_hold' ? { hold: true } : { activate: true })
           ]);
           return ok(result);
         }
@@ -326,7 +324,7 @@ move_project: project_id (required), folder_id (required)`,
         case 'list': {
           const result = await runJxa('read', 'listFolders', [JSON.stringify({
             folder: args.parent,
-            hidden: args.include_hidden || false,
+            includeHidden: args.include_hidden || false,
             limit: args.limit || 100
           })]);
           return ok(result);
@@ -398,7 +396,7 @@ delete: id (required)`,
       switch (action) {
         case 'list': {
           const result = await runJxa('read', 'listTags', [JSON.stringify({
-            hidden: args.include_hidden || false,
+            includeHidden: args.include_hidden || false,
             limit: args.limit || 100
           })]);
           return ok(result);
@@ -409,7 +407,7 @@ delete: id (required)`,
           const result = await runJxa('read', 'listTasksByTag', [
             args.id,
             JSON.stringify({
-              all: args.include_completed || false,
+              includeCompleted: args.include_completed || false,
               limit: args.limit || 100
             })
           ]);
@@ -441,7 +439,7 @@ delete: id (required)`,
           if (!args.id) return err('id required');
           const result = await runJxa('write', 'modifyTag', [
             args.id,
-            JSON.stringify({ action: 'delete' })
+            JSON.stringify({ delete: true })
           ]);
           return ok(result);
         }
@@ -486,7 +484,7 @@ status: Check if OmniFocus is running`,
           if (!args.project_id) return err('project_id required');
           const result = await runJxa('write', 'modifyProject', [
             args.project_id,
-            JSON.stringify({ action: 'review' })
+            JSON.stringify({ reviewed: true })
           ]);
           return ok(result);
         }
