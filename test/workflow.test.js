@@ -1003,6 +1003,72 @@ describe('Phase 9c: Date Defaults, Validation & Forecast', { timeout: TIMEOUT * 
     assert.strictEqual(dayOf(early.id), key, 'early-morning task listed under its local day');
   });
 
+  it('should stamp the current time for a completion dated today', async () => {
+    const task = await runCliJson(`add task "${uniqueName('Complete_Today')}"`);
+    createdItems.tasks.push(task.id);
+
+    const started = Date.now();
+    const result = await runCliJson(`complete "${task.id}" --on today`);
+    const finished = Date.now();
+    assert.ok(result.success, 'Should succeed');
+
+    // OmniFocus keeps whole seconds, so allow for the truncation.
+    const stamped = new Date(result.completed[0].completionDate).getTime();
+    assert.ok(stamped >= started - 1000 && stamped <= finished,
+      `completion ${result.completed[0].completionDate} should fall while the command ran`);
+  });
+
+  it('should stamp noon for a completion backdated to a bare day', async () => {
+    const task = await runCliJson(`add task "${uniqueName('Complete_Yesterday')}"`);
+    createdItems.tasks.push(task.id);
+
+    const result = await runCliJson(`complete "${task.id}" --on yesterday`);
+    assert.ok(result.success, 'Should succeed');
+
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    const stamped = result.completed[0].completionDate;
+    assert.strictEqual(localDay(stamped), localDay(yesterday.toISOString()));
+    assert.deepStrictEqual(clockOf(stamped), [12, 0, 0]);
+  });
+
+  it('should treat a bare search bound as the whole day', async () => {
+    const marker = uniqueName('Bounds');
+    const dues = {
+      dayBeforeLate: '2031-07-14T23:30:00',
+      early: '2031-07-15T00:30:00',
+      late: '2031-07-15T23:30:00',
+      dayAfterEarly: '2031-07-16T00:30:00'
+    };
+    const ids = {};
+    for (const [label, due] of Object.entries(dues)) {
+      const task = await runCliJson(`add task "${marker}_${label}" --due "${due}"`);
+      createdItems.tasks.push(task.id);
+      ids[label] = task.id;
+    }
+
+    const found = async (flags) => {
+      const result = await runCliJson(`search "${marker}" ${flags}`);
+      return result.tasks.map(t => t.id).sort();
+    };
+
+    assert.deepStrictEqual(await found('--due-after "2031-07-15" --due-before "2031-07-15"'),
+      [ids.early, ids.late].sort(), 'one day as both bounds returns exactly that day');
+    assert.deepStrictEqual(await found('--due-before "2031-07-15"'),
+      [ids.dayBeforeLate, ids.early, ids.late].sort(), 'before includes the whole of the day named');
+    assert.deepStrictEqual(await found('--due-after "2031-07-15"'),
+      [ids.early, ids.late, ids.dayAfterEarly].sort(), 'after includes the whole of the day named');
+    assert.deepStrictEqual(await found('--due-before "2031-07-15T12:00:00"'),
+      [ids.dayBeforeLate, ids.early].sort(), 'an explicit time is used as given');
+  });
+
+  it('should reject an unparseable search bound instead of ignoring the filter', async () => {
+    const result = await runCli('search --due-before "next friday" --json');
+    const json = result.json || tryParseJson(result.stdout);
+    assert.strictEqual(json.success, false, 'Should not report success');
+    assert.match(json.error, /Invalid due-before date: next friday/);
+  });
+
 });
 
 // ============================================================================

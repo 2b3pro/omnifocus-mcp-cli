@@ -13,19 +13,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the default time OmniFocus uses for that field, read from your OmniFocus
   settings, instead of 5 p.m. for every field. Factory defaults apply if the
   settings cannot be read: due 5 p.m., defer midnight, planned 9 a.m.
-  **Bare due dates move** if your default due time is not 5 p.m. Completion
-  dates and search filters are unchanged. Existing stored dates are not
-  migrated. ([#1](https://github.com/2b3pro/omnifocus-mcp-cli/issues/1))
+  **Bare due dates move** if your default due time is not 5 p.m. Existing
+  stored dates are not migrated.
+  ([#1](https://github.com/2b3pro/omnifocus-mcp-cli/issues/1))
+- `of search --due-before` and `--due-after` treat a bare date as the whole
+  day: `--due-before` runs to the end of it and `--due-after` starts at the
+  beginning. Both previously compared at 5 p.m., so `--due-before tomorrow`
+  missed a task due tomorrow evening.
+- `of complete --on` with a bare date stamps noon on that day, not 5 p.m.
+  A bare date that is today stamps the current time.
 - A date that cannot be parsed (`next friday`, `3d`, `2026-02-30`) or a
   malformed `--due-by`/`--defer-by`/`--planned-by` offset is now an error on
   `add`, `add project`, `modify`, `project modify` and `qe`, including with
   `--dry-run`. Previously the command reported success and left the date
-  unset. Nothing is created or modified when a date is rejected.
+  unset. Nothing is created or modified when a date is rejected. An
+  unparseable `of search` date filter is likewise an error; previously the
+  filter was dropped and every task was returned.
 
 ### Fixed
 
 - A bare date on `--defer` hid the task until 5 p.m. on that day.
   ([#1](https://github.com/2b3pro/omnifocus-mcp-cli/issues/1))
+- `of complete --on today` recorded a completion at 5 p.m., which is in the
+  future when run earlier in the day.
 - `of list forecast` grouped tasks by their UTC day, so a task due in the
   evening was listed under the following day in timezones west of UTC.
 - MCP: `due` and `defer` on task and project `create`/`update` were silently

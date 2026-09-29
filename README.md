@@ -126,11 +126,21 @@ OmniFocus settings:
 | Defer | `DefaultStartTime` | 12:00 a.m. |
 | Planned | `DefaultPlannedTime` | 9:00 a.m. |
 
-The factory default is used if the setting cannot be read. Completion dates
-(`of complete --on`) and search date filters still resolve to 5 p.m. local
-time.
+The factory default is used if the setting cannot be read.
 
-A date that cannot be parsed is an error: nothing is created or modified.
+Dates that are not one of those fields have fixed rules:
+
+| Flag | A bare date means |
+|---|---|
+| `of complete --on` | Noon on that day, or the current time if the day is today |
+| `--due-after` | The start of that day (12:00 a.m.) |
+| `--due-before` | The end of that day (11:59:59 p.m.) |
+
+So `of search --due-after 2026-10-01 --due-before 2026-10-01` returns
+everything due on October 1.
+
+A date that cannot be parsed is an error: nothing is created, modified, or
+searched.
 
 ```bash
 # Update task

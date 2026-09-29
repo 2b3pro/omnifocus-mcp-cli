@@ -14,7 +14,7 @@
     // ("today", "-2d", ISO); an unparseable value is an error, not a silent now().
     let completionDate = null;
     if (opts.completionDate) {
-      completionDate = parseDate(opts.completionDate);
+      completionDate = parseDate(opts.completionDate, "completion");
       if (!completionDate) {
         return JSON.stringify({ success: false, error: "Invalid completion date: " + opts.completionDate });
       }

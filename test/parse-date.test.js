@@ -205,5 +205,65 @@ for (const engine of ['node', 'jxa']) {
       `);
       assert.deepEqual(out, ['2026-10-01', '2026-10-01', '2026-10-01', '2027-01-05']);
     });
+
+    test(`parseDate search bounds cover the whole day, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone, null, `
+        var reads = 0;
+        readDefaultTimeSettings = function () { reads++; return {}; };
+        var parts = function (d) {
+          return [d.getFullYear(), d.getMonth() + 1, d.getDate(),
+            d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()];
+        };
+        var clock = function (d) { return parts(d).slice(3); };
+        return {
+          after: parts(parseDate('2026-10-01', 'after')),
+          before: parts(parseDate('2026-10-01', 'before')),
+          relativeAfter: ['today', 'tomorrow', '+3d', '-2w'].map(function (i) { return clock(parseDate(i, 'after')); }),
+          relativeBefore: ['today', 'tomorrow', '+3d', '-2w'].map(function (i) { return clock(parseDate(i, 'before')); }),
+          explicit: [clock(parseDate('2026-10-01T09:30:00', 'after')), clock(parseDate('2026-10-01T09:30:00', 'before'))],
+          reads: reads
+        };
+      `);
+      assert.deepEqual(out.after, [2026, 10, 1, 0, 0, 0, 0], 'lower bound is the start of the day');
+      assert.deepEqual(out.before, [2026, 10, 1, 23, 59, 59, 999], 'upper bound is the end of the day');
+      assert.deepEqual(out.relativeAfter, Array(4).fill([0, 0, 0, 0]));
+      assert.deepEqual(out.relativeBefore, Array(4).fill([23, 59, 59, 999]));
+      assert.deepEqual(out.explicit, [[9, 30, 0, 0], [9, 30, 0, 0]], 'explicit timestamps keep their time');
+      assert.equal(out.reads, 0, 'search bounds never read OmniFocus settings');
+    });
+
+    test(`parseDate completion dates are never later today, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone, null, `
+        var reads = 0;
+        readDefaultTimeSettings = function () { reads++; return {}; };
+        var pad = function (n) { return (n < 10 ? '0' : '') + n; };
+        var started = Date.now();
+        var now = new Date();
+        var todayIso = now.getFullYear() + '-' + pad(now.getMonth() + 1) + '-' + pad(now.getDate());
+        var clock = function (d) { return [d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()]; };
+        var result = {
+          today: ['today', 'TODAY', todayIso, '+0d', '-0d'].map(function (i) {
+            return parseDate(i, 'completion').getTime() - started;
+          }),
+          past: ['yesterday', '-2d', '-1w', '2026-09-12'].map(function (i) { return clock(parseDate(i, 'completion')); }),
+          pastDay: localDateKey(parseDate('2026-09-12', 'completion')),
+          future: clock(parseDate('tomorrow', 'completion')),
+          explicit: clock(parseDate('2026-09-12T21:45:00', 'completion')),
+          invalid: parseDate('next friday', 'completion'),
+          finished: Date.now() - started,
+          reads: reads
+        };
+        return result;
+      `);
+      for (const elapsed of out.today) {
+        assert.ok(elapsed >= 0 && elapsed <= out.finished, `a bare date that is today stamps now (${elapsed}ms)`);
+      }
+      assert.deepEqual(out.past, Array(4).fill([12, 0, 0, 0]), 'other bare dates land at noon');
+      assert.equal(out.pastDay, '2026-09-12', 'bare date keeps its local calendar day');
+      assert.deepEqual(out.future, [12, 0, 0, 0]);
+      assert.deepEqual(out.explicit, [21, 45, 0, 0], 'explicit timestamps keep their time');
+      assert.equal(out.invalid, null);
+      assert.equal(out.reads, 0, 'completion dates never read OmniFocus settings');
+    });
   }
 }

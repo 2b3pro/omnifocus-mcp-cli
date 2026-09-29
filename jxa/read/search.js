@@ -37,10 +37,12 @@
       }
     }
 
-    const dueBefore = opts.dueBefore ? parseDate(opts.dueBefore) : null;
-    const dueAfter = opts.dueAfter ? parseDate(opts.dueAfter) : null;
-    const deferBefore = opts.deferBefore ? parseDate(opts.deferBefore) : null;
-    const deferAfter = opts.deferAfter ? parseDate(opts.deferAfter) : null;
+    // A bound given as a bare date covers that whole day: "before" runs to
+    // the end of it and "after" starts at the beginning.
+    const dueBefore = opts.dueBefore ? requireDate(opts.dueBefore, "before", "due-before") : null;
+    const dueAfter = opts.dueAfter ? requireDate(opts.dueAfter, "after", "due-after") : null;
+    const deferBefore = opts.deferBefore ? requireDate(opts.deferBefore, "before", "defer-before") : null;
+    const deferAfter = opts.deferAfter ? requireDate(opts.deferAfter, "after", "defer-after") : null;
 
     const targetProjectId = targetProject ? targetProject.id() : null;
     const targetTagId = targetTag ? targetTag.id() : null;

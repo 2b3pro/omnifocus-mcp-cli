@@ -549,8 +549,16 @@ function findTask(doc, taskId) {
 // settings cannot be read.
 const FACTORY_DEFAULT_TIMES = { due: [17, 0, 0], defer: [0, 0, 0], planned: [9, 0, 0] };
 
-// parseDate() without a field keeps the 5pm it has always used, so callers
-// that are not setting a due/defer/planned date are unaffected.
+// Fields with no OmniFocus setting behind them, as [h, m, s, ms]. Search
+// bounds cover the whole of the day they name; a backdated completion lands
+// mid-day (and see parseDate for a completion dated today).
+const FIXED_DEFAULT_TIMES = {
+  after: [0, 0, 0, 0],
+  before: [23, 59, 59, 999],
+  completion: [12, 0, 0, 0]
+};
+
+// parseDate() without a field keeps the 5pm it has always used.
 const UNSPECIFIED_DEFAULT_TIME = [17, 0, 0];
 
 let defaultTimesCache = null;
@@ -582,9 +590,10 @@ function parseClockTime(value) {
 }
 
 /**
- * Default time of day, as [h, m, s], for a date field ("due", "defer", "planned")
+ * Default time of day, as [h, m, s] or [h, m, s, ms], for a date field
  */
 function defaultTimeFor(field) {
+  if (FIXED_DEFAULT_TIMES.hasOwnProperty(field)) return FIXED_DEFAULT_TIMES[field];
   if (!FACTORY_DEFAULT_TIMES.hasOwnProperty(field)) return UNSPECIFIED_DEFAULT_TIME;
 
   if (!defaultTimesCache) {
@@ -603,8 +612,10 @@ function defaultTimeFor(field) {
 /**
  * Parse natural date string
  * @param {string} dateStr - "today", "tomorrow", "+3d", "-2w", or ISO
- * @param {string} [field] - "due", "defer" or "planned": picks the time of day
- *   for input that has none, matching what OmniFocus does for that field
+ * @param {string} [field] - picks the time of day for input that has none.
+ *   "due", "defer", "planned": what OmniFocus uses for that field.
+ *   "after", "before": start and end of the day, for search bounds.
+ *   "completion": noon, or the current time if the day is today.
  */
 function parseDate(dateStr, field) {
   if (!dateStr) return null;
@@ -612,8 +623,11 @@ function parseDate(dateStr, field) {
   const now = new Date();
   const lowerDate = dateStr.toLowerCase().trim();
   const atDefaultTime = (d) => {
+    // Any fixed time on today's date could still be ahead of the clock, and
+    // a task cannot have been completed later than now.
+    if (field === "completion" && localDateKey(d) === localDateKey(now)) return new Date(now);
     const time = defaultTimeFor(field);
-    d.setHours(time[0], time[1], time[2], 0);
+    d.setHours(time[0], time[1], time[2], time[3] || 0);
     return d;
   };
 
@@ -683,12 +697,14 @@ function parseDate(dateStr, field) {
 }
 
 /**
- * parseDate() for write paths: an unparseable date is an error, so a mistyped
- * date cannot report success while leaving the field unset.
+ * parseDate() where a bad date must not pass silently: an unparseable date is
+ * an error, so a mistyped date cannot report success while leaving a field
+ * unset or a search filter unapplied. `label` names the date in the message
+ * when the field alone would not ("due-before" rather than "before").
  */
-function requireDate(dateStr, field) {
+function requireDate(dateStr, field, label) {
   const parsed = parseDate(dateStr, field);
-  if (!parsed) throw new Error("Invalid " + field + " date: " + dateStr);
+  if (!parsed) throw new Error("Invalid " + (label || field) + " date: " + dateStr);
   return parsed;
 }
 
