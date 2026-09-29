@@ -17,7 +17,7 @@ import { registerTagCommand } from './commands/tag.js';
 import { registerReviewCommand } from './commands/review.js';
 import { registerMcpCommand } from './commands/mcp.js';
 
-const VERSION = '1.1.1';
+const VERSION = '1.2.0';
 
 export function createProgram() {
   const program = new Command();

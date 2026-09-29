@@ -5,7 +5,7 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.0] - 2026-09-29
 
 ### Added
 
@@ -29,14 +29,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   missed a task due tomorrow evening.
 - `of complete --on` with a bare date stamps noon on that day, not 5 p.m.
   A bare date that is today stamps the current time.
-- A date that cannot be parsed (`next friday`, `3d`, `2026-02-30`) or a
+- A date that cannot be parsed (`last friday`, `3d`, `2026-02-30`) or a
   malformed `--due-by`/`--defer-by`/`--planned-by` offset is now an error on
   `add`, `add project`, `modify`, `project modify` and `qe`, including with
   `--dry-run`. Previously the command reported success and left the date
   unset. Nothing is created or modified when a date is rejected. An
   unparseable `of search` date filter is likewise an error; previously the
   filter was dropped and every task was returned.
-
 - Date flags accept only the documented forms: the keywords, relative
   offsets, `YYYY-MM-DD`, and ISO timestamps. Other input was handed to the
   JavaScript engine's own parser, which stored `10/1/2026` at midnight
