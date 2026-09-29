@@ -48,7 +48,7 @@ Notes:
   answers "can I?"; planned answers "will I?".
 - **Due is not a priority proxy.** Fake deadlines erode the due list until real
   ones stop registering. Use the flag for urgency instead.
-- Date arguments accept `today`, `tomorrow`, `+3d`, `2026-01-15`.
+- Date arguments accept `today`, `tomorrow`, `friday`, `+3d`, `2026-01-15`.
 - Relative `--*-by` offsets accept `<±n><d|w|m>` and adjust the *existing*
   value (falling back to now if unset).
 - Pass `""` to clear a date: `of modify abc123 --planned ""`.
@@ -202,7 +202,7 @@ Add a new task. Default command under `of add`.
 | `-e, --estimate <minutes>` | Estimated time in minutes |
 | `--dry-run` | Preview without creating |
 
-**Date formats:** `today`, `tomorrow`, `+3d`, `+1w`, `2026-01-15`, `next week`
+**Date formats:** `today`, `tomorrow`, `friday`, `next friday`, `+3d`, `+1w`, `2026-01-15`, `next week`
 
 ```bash
 # Simple task (goes to Inbox)
@@ -833,5 +833,5 @@ SYNC:     of sync
 QE:       of qe [name] [--save]
 
 FLAGS:    --json  --pretty  --quiet/-q  --limit N  --all  --dry-run
-DATES:    today  tomorrow  +3d  +1w  2026-01-15  "next week"
+DATES:    today  tomorrow  friday  +3d  +1w  2026-01-15  "next week"
 ```

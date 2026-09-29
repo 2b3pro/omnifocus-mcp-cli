@@ -178,7 +178,7 @@ for (const engine of ['node', 'jxa']) {
   test(`requireDate rejects unparseable input, ${engine}`, { skip }, () => {
     const out = runProbe(engine, 'America/Los_Angeles', null, `
       var results = [];
-      ['next friday', '3d', '2026-02-30'].forEach(function (input) {
+      ['last friday', '3d', '2026-02-30'].forEach(function (input) {
         try { requireDate(input, 'defer'); results.push('accepted'); }
         catch (e) { results.push(e.message.split('. ')[0]); }
       });
@@ -186,7 +186,7 @@ for (const engine of ['node', 'jxa']) {
       return results;
     `);
     assert.deepEqual(out, [
-      'Invalid defer date: next friday',
+      'Invalid defer date: last friday',
       'Invalid defer date: 3d',
       'Invalid defer date: 2026-02-30',
       0
@@ -249,7 +249,7 @@ for (const engine of ['node', 'jxa']) {
           pastDay: localDateKey(parseDate('2026-09-12', 'completion')),
           future: clock(parseDate('tomorrow', 'completion')),
           explicit: clock(parseDate('2026-09-12T21:45:00', 'completion')),
-          invalid: parseDate('next friday', 'completion'),
+          invalid: parseDate('last friday', 'completion'),
           finished: Date.now() - started,
           reads: reads
         };
@@ -295,7 +295,8 @@ const rejected = [
   '2026-02-30T09:00:00', '2026-13-01T09:00:00', '2026-10-01T24:00:00',
   '2026-10-01T09:60:00', '2026-10-01T09:30:60', '2026-10-01T09', '2026-10-01T',
   '2026-10-01Z', '2026-10-01T09:30:15+25:00', '2026-10-01T09:30:15+07:60',
-  'friday', 'next friday', 'next monday', 'noon', 'now', '3d', '+2h', '+3', 'd'
+  'noon', 'now', '3d', '+2h', '+3', 'd',
+  'fridays', 'frid', 'fr', 'next', 'next  ', 'last friday', 'this friday', 'next next friday', 'friday next'
 ];
 
 for (const engine of ['node', 'jxa']) {
@@ -339,5 +340,115 @@ for (const engine of ['node', 'jxa']) {
     for (const form of ['today', 'tomorrow', '+3d', 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM']) {
       assert.ok(out.includes(form), `message should mention ${form}: ${out}`);
     }
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Weekday names
+// ---------------------------------------------------------------------------
+
+const weekdays = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+
+// parseDate() reads the clock itself, so the probe replaces Date with one
+// whose "now" is fixed. That lets every weekday be tried from every weekday.
+const fixedClock = (y, m, d, h) => `
+  var RealDate = Date;
+  var fixedNow = new RealDate(${y}, ${m - 1}, ${d}, ${h}, 15, 30, 0).getTime();
+  Date = function (a, b, c, d, e, f, g) {
+    if (arguments.length === 0) return new RealDate(fixedNow);
+    if (arguments.length === 1) return new RealDate(a);
+    return new RealDate(a, b, c, d || 0, e || 0, f || 0, g || 0);
+  };
+  Date.now = function () { return fixedNow; };
+  Date.UTC = RealDate.UTC;
+  Date.prototype = RealDate.prototype;
+`;
+
+for (const engine of ['node', 'jxa']) {
+  const skip = engine === 'jxa' && process.platform !== 'darwin';
+
+  for (const timezone of Object.keys(zones)) {
+    test(`parseDate weekday names are the next such day, ${engine} in ${timezone}`, { skip }, () => {
+      // 2026-09-27 is a Sunday; walk "today" through one full week, early and late in the day.
+      for (let offset = 0; offset < 7; offset++) {
+        for (const hour of [0, 23]) {
+          const out = runProbe(engine, timezone, null, `
+            ${fixedClock(2026, 9, 27 + offset, hour)}
+            var today = new RealDate(fixedNow);
+            var midnight = new RealDate(today.getFullYear(), today.getMonth(), today.getDate()).getTime();
+            var describe = function (input, field) {
+              var d = parseDate(input, field);
+              if (!d) return null;
+              var dayStart = new RealDate(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+              return {
+                weekday: d.getDay(),
+                daysAhead: Math.round((dayStart - midnight) / 86400000),
+                clock: [d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()]
+              };
+            };
+            return {
+              today: today.getDay(),
+              full: ${JSON.stringify(weekdays)}.map(function (name) { return describe(name, 'defer'); }),
+              short: ${JSON.stringify(weekdays)}.map(function (name) { return describe(name.slice(0, 3), 'defer'); }),
+              next: ${JSON.stringify(weekdays)}.map(function (name) { return describe('next ' + name, 'defer'); }),
+              spaced: describe('  Next   FRIDAY ', 'defer'),
+              due: describe('friday', 'due'),
+              planned: describe('fri', 'planned'),
+              before: describe('friday', 'before'),
+              completion: describe('friday', 'completion'),
+              noField: describe('friday')
+            };
+          `);
+          assert.equal(out.today, offset, 'probe clock is on the expected weekday');
+          weekdays.forEach((name, index) => {
+            const daysAhead = ((index - offset + 7) % 7) || 7;
+            const expected = { weekday: index, daysAhead, clock: [0, 0, 0, 0] };
+            const when = `${name} from ${weekdays[offset]} at ${hour}:15`;
+            assert.deepEqual(out.full[index], expected, when);
+            assert.deepEqual(out.short[index], expected, `${name.slice(0, 3)}: ${when}`);
+            assert.deepEqual(out.next[index], expected, `next ${when}`);
+          });
+          const friday = ((5 - offset + 7) % 7) || 7;
+          assert.deepEqual(out.spaced, { weekday: 5, daysAhead: friday, clock: [0, 0, 0, 0] }, 'case and spacing');
+          assert.deepEqual(out.due.clock, [17, 0, 0, 0], 'due default time');
+          assert.deepEqual(out.planned.clock, [9, 0, 0, 0], 'planned default time');
+          assert.deepEqual(out.before.clock, [23, 59, 59, 999], 'search bound covers the day');
+          assert.deepEqual(out.completion.clock, [12, 0, 0, 0], 'completion lands at noon');
+          assert.deepEqual(out.noField.clock, [17, 0, 0, 0], 'no field keeps 17:00');
+        }
+      }
+    });
+  }
+
+  test(`parseDate weekday names cross a clock change by calendar day, ${engine}`, { skip }, () => {
+    // US clocks go back on Sunday 2026-11-01 and forward on Sunday 2026-03-08.
+    const out = runProbe(engine, 'America/Los_Angeles', null, `
+      var result = [];
+      ${fixedClock(2026, 10, 30, 23)}
+      ['sunday', 'monday'].forEach(function (name) {
+        var d = parseDate(name, 'defer');
+        result.push([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]);
+      });
+      fixedNow = new RealDate(2026, 2, 6, 23, 15, 30, 0).getTime();
+      ['sunday', 'monday'].forEach(function (name) {
+        var d = parseDate(name, 'defer');
+        result.push([d.getFullYear(), d.getMonth() + 1, d.getDate(), d.getHours(), d.getMinutes()]);
+      });
+      return result;
+    `);
+    assert.deepEqual(out, [
+      [2026, 11, 1, 0, 0], [2026, 11, 2, 0, 0],
+      [2026, 3, 8, 0, 0], [2026, 3, 9, 0, 0]
+    ]);
+  });
+
+  test(`requireDate mentions weekday names, ${engine}`, { skip }, () => {
+    const out = runProbe(engine, 'America/Los_Angeles', null, `
+      try { requireDate('last friday', 'due'); return 'accepted'; }
+      catch (e) { return e.message; }
+    `);
+    assert.match(out, /^Invalid due date: last friday\. /);
+    assert.ok(out.includes('friday'), out);
+    assert.ok(/weekday/.test(out), out);
   });
 }
