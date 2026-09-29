@@ -4,7 +4,7 @@
  */
 
 import { runJxa, requireOmniFocus } from '../jxa-runner.js';
-import { print, printError } from '../output.js';
+import { print, printError, exitOnFailure } from '../output.js';
 
 /**
  * Read stdin if available (non-TTY)
@@ -150,6 +150,7 @@ Examples:
           };
           const result = await runJxa('write', 'addTask', ['', JSON.stringify(opts)]);
           print(result, options);
+          exitOnFailure(result);
         } else if (name) {
           // Single task mode
           const opts = {
@@ -166,6 +167,7 @@ Examples:
           };
           const result = await runJxa('write', 'addTask', [name, JSON.stringify(opts)]);
           print(result, options);
+          exitOnFailure(result);
         } else {
           printError('Task name required (or pipe tasks via stdin)');
           process.exit(1);
@@ -231,6 +233,7 @@ Examples:
         };
         const result = await runJxa('write', 'addProject', [name, JSON.stringify(opts)]);
         print(result, options);
+        exitOnFailure(result);
       } catch (err) {
         printError(err.message);
         process.exit(1);
@@ -318,6 +321,7 @@ Usage:
         };
         const result = await runJxa('write', 'addTask', [name, JSON.stringify(opts)]);
         print(result, options);
+        exitOnFailure(result);
       } catch (err) {
         printError(err.message);
         process.exit(1);

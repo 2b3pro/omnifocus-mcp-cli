@@ -61,6 +61,18 @@ export function print(result, options = {}) {
 }
 
 /**
+ * Exit non-zero if a script reported failure. runJxa returns script failures
+ * as { success: false } instead of throwing, so a command that only prints
+ * the result exits 0 on an error.
+ * @param {object} result - The result object from runJxa
+ */
+export function exitOnFailure(result) {
+  if (!result || result.success === false) {
+    process.exit(1);
+  }
+}
+
+/**
  * Print error message to stderr
  * @param {string} message - Error message
  */

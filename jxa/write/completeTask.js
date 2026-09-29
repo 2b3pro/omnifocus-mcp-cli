@@ -12,13 +12,7 @@
 
     // Optional backdating. Accepts the same forms as every other date flag
     // ("today", "-2d", ISO); an unparseable value is an error, not a silent now().
-    let completionDate = null;
-    if (opts.completionDate) {
-      completionDate = parseDate(opts.completionDate, "completion");
-      if (!completionDate) {
-        return JSON.stringify({ success: false, error: "Invalid completion date: " + opts.completionDate });
-      }
-    }
+    const completionDate = opts.completionDate ? requireDate(opts.completionDate, "completion") : null;
 
     const completed = [];
     const errors = [];
