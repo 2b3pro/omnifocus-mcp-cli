@@ -15,6 +15,21 @@
       return JSON.stringify({ success: false, error: "Task not found: " + taskId });
     }
 
+    // Parse dates before anything is modified: a date that doesn't parse fails
+    // the command rather than reporting success with the field untouched.
+    const due = opts.dueDate ? requireDate(opts.dueDate, "due") : null;
+    const defer = opts.deferDate ? requireDate(opts.deferDate, "defer") : null;
+    const planned = opts.plannedDate ? requireDate(opts.plannedDate, "planned") : null;
+    for (const field of ["due", "defer", "planned"]) {
+      const offset = opts[field + "By"];
+      if (offset && !/^[+-]?\d+[dwm]$/.test(offset)) {
+        return JSON.stringify({
+          success: false,
+          error: "Invalid " + field + " offset: " + offset + ". Expected [+-]<number><d|w|m>, e.g. +3d, -1w, +2m."
+        });
+      }
+    }
+
     // Dry run mode
     if (opts.dryRun) {
       const current = formatTask(task);
@@ -51,8 +66,7 @@
       if (opts.dueDate === null || opts.dueDate === "") {
         task.dueDate = null;
       } else {
-        const due = parseDate(opts.dueDate);
-        if (due) task.dueDate = due;
+        task.dueDate = due;
       }
     }
 
@@ -75,8 +89,7 @@
       if (opts.deferDate === null || opts.deferDate === "") {
         task.deferDate = null;
       } else {
-        const defer = parseDate(opts.deferDate);
-        if (defer) task.deferDate = defer;
+        task.deferDate = defer;
       }
     }
 
@@ -101,8 +114,7 @@
       if (opts.plannedDate === null || opts.plannedDate === "") {
         task.plannedDate = null;
       } else {
-        const planned = parseDate(opts.plannedDate);
-        if (planned) task.plannedDate = planned;
+        task.plannedDate = planned;
       }
     }
 

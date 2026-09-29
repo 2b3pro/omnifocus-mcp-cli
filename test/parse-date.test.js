@@ -70,3 +70,140 @@ for (const engine of ['node', 'jxa']) {
     });
   }
 }
+
+// ---------------------------------------------------------------------------
+// Field-aware default times (issue #1)
+// ---------------------------------------------------------------------------
+
+// Run a probe body against the real helper in a fresh process. `settings`
+// replaces the OmniFocus settings read so these tests never touch OmniFocus:
+// an object is returned as the configured times, null makes the read throw.
+function runProbe(engine, timezone, settings, body) {
+  const stub = settings === null
+    ? 'readDefaultTimeSettings = function () { throw new Error("settings unavailable"); };'
+    : `readDefaultTimeSettings = function () { return ${JSON.stringify(settings)}; };`;
+  const source = `${helpers}\n${stub}\nJSON.stringify((function () {${body}})());`;
+  const command = engine === 'jxa' ? 'osascript' : process.execPath;
+  const args = engine === 'jxa'
+    ? ['-l', 'JavaScript', '-e', source]
+    : ['--input-type=commonjs', '-e', `console.log(eval(${JSON.stringify(source)}))`];
+  return JSON.parse(execFileSync(command, args, {
+    env: { ...process.env, TZ: timezone }, encoding: 'utf8', timeout: 10000
+  }));
+}
+
+const bareInputs = ['2026-10-01', 'today', 'tomorrow', 'yesterday', '+3d', '-2w', 'next week'];
+const fieldProbe = `
+  var fields = ['due', 'defer', 'planned'];
+  var out = {};
+  fields.forEach(function (field) {
+    out[field] = ${JSON.stringify(bareInputs)}.map(function (input) {
+      var d = parseDate(input, field);
+      return d ? [d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()] : null;
+    });
+  });
+  out.day = (function () {
+    var d = parseDate('2026-10-01', 'defer');
+    return [d.getFullYear(), d.getMonth() + 1, d.getDate()];
+  })();
+  out.explicit = fields.map(function (field) {
+    return [
+      parseDate('2026-10-01T09:30:00', field).getHours(),
+      parseDate('2026-10-01T09:30:00', field).getMinutes(),
+      parseDate('2026-10-01T00:00:00.000Z', field).toISOString()
+    ];
+  });
+  out.noField = ${JSON.stringify(bareInputs)}.map(function (input) {
+    var d = parseDate(input);
+    return [d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()];
+  });
+  out.unknownField = parseDate('2026-10-01', 'bogus').getHours();
+  out.invalid = [parseDate('not-a-date', 'defer'), parseDate('2026-02-30', 'due'), parseDate('', 'planned')];
+  return out;
+`;
+
+const times = (clock) => bareInputs.map(() => clock);
+
+for (const engine of ['node', 'jxa']) {
+  const skip = engine === 'jxa' && process.platform !== 'darwin';
+
+  for (const timezone of Object.keys(zones)) {
+    test(`parseDate field defaults: factory fallback, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone, null, fieldProbe);
+      assert.deepEqual(out.due, times([17, 0, 0, 0]), 'due falls back to 17:00');
+      assert.deepEqual(out.defer, times([0, 0, 0, 0]), 'defer falls back to 00:00');
+      assert.deepEqual(out.planned, times([9, 0, 0, 0]), 'planned falls back to 09:00');
+      assert.deepEqual(out.day, [2026, 10, 1], 'bare date keeps its local calendar day');
+      assert.deepEqual(out.noField, times([17, 0, 0, 0]), 'no field argument behaves as 1.1.1');
+      assert.equal(out.unknownField, 17, 'unknown field behaves as no field');
+      assert.deepEqual(out.invalid, [null, null, null], 'invalid dates stay null');
+      for (const explicit of out.explicit) {
+        assert.deepEqual(explicit, [9, 30, '2026-10-01T00:00:00.000Z'], 'explicit timestamps keep their time');
+      }
+    });
+
+    test(`parseDate field defaults: configured times, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone,
+        { due: '07:00:00', defer: '06:15', planned: '09:30:45' }, fieldProbe);
+      assert.deepEqual(out.due, times([7, 0, 0, 0]));
+      assert.deepEqual(out.defer, times([6, 15, 0, 0]));
+      assert.deepEqual(out.planned, times([9, 30, 45, 0]));
+      assert.deepEqual(out.noField, times([17, 0, 0, 0]), 'no field argument ignores settings');
+      for (const explicit of out.explicit) {
+        assert.deepEqual(explicit, [9, 30, '2026-10-01T00:00:00.000Z'], 'explicit timestamps keep their time');
+      }
+    });
+  }
+
+  test(`parseDate field defaults: unusable setting values fall back, ${engine}`, { skip }, () => {
+    const out = runProbe(engine, 'America/Los_Angeles',
+      { due: 'null', defer: '25:00', planned: 'garbage' }, fieldProbe);
+    assert.deepEqual(out.due, times([17, 0, 0, 0]));
+    assert.deepEqual(out.defer, times([0, 0, 0, 0]));
+    assert.deepEqual(out.planned, times([9, 0, 0, 0]));
+  });
+
+  test(`parseDate field defaults: settings are read once per script, ${engine}`, { skip }, () => {
+    const reads = runProbe(engine, 'America/Los_Angeles', { due: '07:00' }, `
+      var count = 0;
+      var inner = readDefaultTimeSettings;
+      readDefaultTimeSettings = function () { count++; return inner(); };
+      parseDate('today', 'due'); parseDate('tomorrow', 'defer'); parseDate('+3d', 'planned');
+      parseDate('2026-10-01T09:30:00', 'due'); parseDate('today');
+      return count;
+    `);
+    assert.equal(reads, 1);
+  });
+
+  test(`requireDate rejects unparseable input, ${engine}`, { skip }, () => {
+    const out = runProbe(engine, 'America/Los_Angeles', null, `
+      var results = [];
+      ['next friday', '3d', '2026-02-30'].forEach(function (input) {
+        try { requireDate(input, 'defer'); results.push('accepted'); }
+        catch (e) { results.push(e.message); }
+      });
+      results.push(requireDate('2026-10-01', 'defer').getHours());
+      return results;
+    `);
+    assert.deepEqual(out, [
+      'Invalid defer date: next friday',
+      'Invalid defer date: 3d',
+      'Invalid defer date: 2026-02-30',
+      0
+    ]);
+  });
+
+  for (const timezone of Object.keys(zones)) {
+    test(`localDateKey uses the local calendar day, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone, null, `
+        return [
+          localDateKey(new Date(2026, 9, 1, 17, 0, 0)),
+          localDateKey(new Date(2026, 9, 1, 0, 0, 0)),
+          localDateKey(new Date(2026, 9, 1, 23, 59, 59)),
+          localDateKey(new Date(2027, 0, 5, 17, 0, 0))
+        ];
+      `);
+      assert.deepEqual(out, ['2026-10-01', '2026-10-01', '2026-10-01', '2027-01-05']);
+    });
+  }
+}

@@ -5,6 +5,11 @@
     const doc = getDoc(app);
     const opts = parseJsonArg(4, {});
 
+    // Parse dates before the panel opens: a date that doesn't parse fails the
+    // command rather than entering a task without it.
+    const due = opts.dueDate ? requireDate(opts.dueDate, "due") : null;
+    const defer = opts.deferDate ? requireDate(opts.deferDate, "defer") : null;
+
     const qe = doc.quickEntry;
 
     // Open the quick entry panel
@@ -19,14 +24,8 @@
       });
 
       if (opts.note) task.note = opts.note;
-      if (opts.dueDate) {
-        const due = parseDate(opts.dueDate);
-        if (due) task.dueDate = due;
-      }
-      if (opts.deferDate) {
-        const defer = parseDate(opts.deferDate);
-        if (defer) task.deferDate = defer;
-      }
+      if (due) task.dueDate = due;
+      if (defer) task.deferDate = defer;
       if (opts.flagged) task.flagged = true;
 
       if (opts.autoSave) {

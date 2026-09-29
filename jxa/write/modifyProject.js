@@ -15,6 +15,11 @@
       return JSON.stringify({ success: false, error: "Project not found: " + nameOrId });
     }
 
+    // Parse dates before anything is modified: a date that doesn't parse fails
+    // the command rather than reporting success with the field untouched.
+    const due = opts.dueDate ? requireDate(opts.dueDate, "due") : null;
+    const defer = opts.deferDate ? requireDate(opts.deferDate, "defer") : null;
+
     // Dry run mode
     if (opts.dryRun) {
       return JSON.stringify({
@@ -87,12 +92,9 @@
     }
 
     // Due date
-    if (opts.dueDate) {
-      const due = parseDate(opts.dueDate);
-      if (due) {
-        project.dueDate = due;
-        changes.push("dueDate");
-      }
+    if (due) {
+      project.dueDate = due;
+      changes.push("dueDate");
     }
 
     // Clear due date
@@ -102,12 +104,9 @@
     }
 
     // Defer date
-    if (opts.deferDate) {
-      const defer = parseDate(opts.deferDate);
-      if (defer) {
-        project.deferDate = defer;
-        changes.push("deferDate");
-      }
+    if (defer) {
+      project.deferDate = defer;
+      changes.push("deferDate");
     }
 
     // Clear defer date

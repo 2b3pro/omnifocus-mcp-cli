@@ -5,6 +5,32 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- Dates given without a time of day (`2026-10-01`, `today`, `+3d`) now take
+  the default time OmniFocus uses for that field, read from your OmniFocus
+  settings, instead of 5 p.m. for every field. Factory defaults apply if the
+  settings cannot be read: due 5 p.m., defer midnight, planned 9 a.m.
+  **Bare due dates move** if your default due time is not 5 p.m. Completion
+  dates and search filters are unchanged. Existing stored dates are not
+  migrated. ([#1](https://github.com/2b3pro/omnifocus-mcp-cli/issues/1))
+- A date that cannot be parsed (`next friday`, `3d`, `2026-02-30`) or a
+  malformed `--due-by`/`--defer-by`/`--planned-by` offset is now an error on
+  `add`, `add project`, `modify`, `project modify` and `qe`, including with
+  `--dry-run`. Previously the command reported success and left the date
+  unset. Nothing is created or modified when a date is rejected.
+
+### Fixed
+
+- A bare date on `--defer` hid the task until 5 p.m. on that day.
+  ([#1](https://github.com/2b3pro/omnifocus-mcp-cli/issues/1))
+- `of list forecast` grouped tasks by their UTC day, so a task due in the
+  evening was listed under the following day in timezones west of UTC.
+- MCP: `due` and `defer` on task and project `create`/`update` were silently
+  dropped.
+
 ## [1.1.1] - 2026-09-19
 
 ### Fixed
