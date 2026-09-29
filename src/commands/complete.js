@@ -4,7 +4,7 @@
  */
 
 import { runJxa, requireOmniFocus } from '../jxa-runner.js';
-import { print, printError } from '../output.js';
+import { print, printError, exitOnFailure } from '../output.js';
 
 export function registerCompleteCommand(program) {
   // Mark complete
@@ -34,6 +34,7 @@ Examples:
         const ids = taskIds.join(',');
         const result = await runJxa('write', 'completeTask', [ids, JSON.stringify({ dryRun: options.dryRun || false, completionDate: options.on || null })]);
         print(result, options);
+        exitOnFailure(result);
       } catch (err) {
         printError(err.message);
         process.exit(1);

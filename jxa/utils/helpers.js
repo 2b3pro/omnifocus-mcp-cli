@@ -610,8 +610,12 @@ function defaultTimeFor(field) {
 }
 
 /**
- * Parse natural date string
- * @param {string} dateStr - "today", "tomorrow", "+3d", "-2w", or ISO
+ * Parse natural date string. Forms other than these return null: handing the
+ * rest to `new Date()` gave answers that differ by engine ("Oct 1" is the
+ * year 2000 in JXA and 2001 in Node) and ignored the field's default time.
+ * @param {string} dateStr - "today", "tomorrow", "yesterday", "next week",
+ *   "+3d", "-2w", "YYYY-MM-DD", or an ISO timestamp "YYYY-MM-DDTHH:MM[:SS]"
+ *   with an optional "Z" or "+HH:MM" offset
  * @param {string} [field] - picks the time of day for input that has none.
  *   "due", "defer", "planned": what OmniFocus uses for that field.
  *   "after", "before": start and end of the day, for search bounds.
@@ -685,15 +689,47 @@ function parseDate(dateStr, field) {
     return atDefaultTime(parsed);
   }
 
-  // Preserve explicit times and timezone offsets in timestamp input.
-  try {
-    const parsed = new Date(dateStr);
-    if (!isNaN(parsed.getTime())) {
-      return parsed;
-    }
-  } catch {}
+  // Preserve explicit times and timezone offsets in timestamp input. Built
+  // from its parts so that every engine reads it the same way and an
+  // impossible date or time is rejected, not rolled over.
+  const stamp = lowerDate.match(
+    /^(\d{4})-(\d{2})-(\d{2})[t ](\d{2}):(\d{2})(?::(\d{2})(?:\.(\d{1,3}))?)?(z|[+-]\d{2}:?\d{2})?$/
+  );
+  if (!stamp) return null;
 
-  return null;
+  const year = Number(stamp[1]);
+  const month = Number(stamp[2]) - 1;
+  const day = Number(stamp[3]);
+  const hours = Number(stamp[4]);
+  const minutes = Number(stamp[5]);
+  const seconds = Number(stamp[6] || 0);
+  const millis = Number(((stamp[7] || "") + "000").slice(0, 3));
+  if (hours > 23 || minutes > 59 || seconds > 59) return null;
+
+  const parsed = new Date(0);
+  if (!stamp[8]) {
+    parsed.setFullYear(year, month, day);
+    if (parsed.getFullYear() !== year || parsed.getMonth() !== month || parsed.getDate() !== day) {
+      return null;
+    }
+    parsed.setHours(hours, minutes, seconds, millis);
+    return parsed;
+  }
+
+  parsed.setUTCFullYear(year, month, day);
+  if (parsed.getUTCFullYear() !== year || parsed.getUTCMonth() !== month || parsed.getUTCDate() !== day) {
+    return null;
+  }
+  parsed.setUTCHours(hours, minutes, seconds, millis);
+  if (stamp[8] !== "z") {
+    const offset = stamp[8].match(/^([+-])(\d{2}):?(\d{2})$/);
+    const offsetHours = Number(offset[2]);
+    const offsetMinutes = Number(offset[3]);
+    if (offsetHours > 23 || offsetMinutes > 59) return null;
+    const sign = offset[1] === "-" ? -1 : 1;
+    parsed.setTime(parsed.getTime() - sign * (offsetHours * 60 + offsetMinutes) * 60000);
+  }
+  return parsed;
 }
 
 /**
@@ -704,7 +740,12 @@ function parseDate(dateStr, field) {
  */
 function requireDate(dateStr, field, label) {
   const parsed = parseDate(dateStr, field);
-  if (!parsed) throw new Error("Invalid " + (label || field) + " date: " + dateStr);
+  if (!parsed) {
+    throw new Error(
+      "Invalid " + (label || field) + " date: " + dateStr + ". Expected today, tomorrow, " +
+      "yesterday, next week, an offset such as +3d or -2w, YYYY-MM-DD, or YYYY-MM-DDTHH:MM."
+    );
+  }
   return parsed;
 }
 

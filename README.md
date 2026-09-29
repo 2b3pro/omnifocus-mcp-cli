@@ -112,9 +112,17 @@ cat outline.md | of add batch --folder "Q1 Goals"
 
 ### Modifying
 
-Date flags accept `today`, `tomorrow`, `yesterday`, relative offsets `±N` with
-`d`/`w`/`m`/`y` units (`+3d`, `-2w`, `+1m`, `-1y`), or ISO dates.
-ISO timestamps retain their specified time and timezone offset.
+Date flags accept these forms and no others:
+
+| Form | Examples |
+|---|---|
+| Keyword | `today`, `tomorrow`, `yesterday`, `next week` |
+| Relative offset, `±N` with `d`/`w`/`m`/`y` | `+3d`, `-2w`, `+1m`, `-1y` |
+| ISO date | `2026-10-01` |
+| ISO timestamp | `2026-10-01T09:30`, `2026-10-01T09:30:00-07:00`, `2026-10-01T16:30:00Z` |
+
+ISO timestamps retain their specified time and timezone offset. A timestamp
+without an offset is local time.
 
 Date-only values (`YYYY-MM-DD`) and relative dates have no time of day, so
 they take the default time OmniFocus uses for that field, read from your
@@ -139,8 +147,8 @@ Dates that are not one of those fields have fixed rules:
 So `of search --due-after 2026-10-01 --due-before 2026-10-01` returns
 everything due on October 1.
 
-A date that cannot be parsed is an error: nothing is created, modified, or
-searched.
+Anything else, such as `10/1/2026`, `Oct 1` or `next friday`, is an error:
+the command exits non-zero and nothing is created, modified, or searched.
 
 ```bash
 # Update task

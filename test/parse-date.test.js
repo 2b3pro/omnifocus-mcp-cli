@@ -180,7 +180,7 @@ for (const engine of ['node', 'jxa']) {
       var results = [];
       ['next friday', '3d', '2026-02-30'].forEach(function (input) {
         try { requireDate(input, 'defer'); results.push('accepted'); }
-        catch (e) { results.push(e.message); }
+        catch (e) { results.push(e.message.split('. ')[0]); }
       });
       results.push(requireDate('2026-10-01', 'defer').getHours());
       return results;
@@ -266,4 +266,78 @@ for (const engine of ['node', 'jxa']) {
       assert.equal(out.reads, 0, 'completion dates never read OmniFocus settings');
     });
   }
+}
+
+// ---------------------------------------------------------------------------
+// Accepted forms: anything else is rejected, never guessed at
+// ---------------------------------------------------------------------------
+
+const timestamps = [
+  // [input, expected ISO instant, or local [y, m, d, h, mi, s, ms]]
+  ['2026-10-01T09:30', [2026, 10, 1, 9, 30, 0, 0]],
+  ['2026-10-01T09:30:15', [2026, 10, 1, 9, 30, 15, 0]],
+  ['2026-10-01T09:30:15.250', [2026, 10, 1, 9, 30, 15, 250]],
+  ['2026-10-01 09:30', [2026, 10, 1, 9, 30, 0, 0]],
+  [' 2026-10-01t09:30:15 ', [2026, 10, 1, 9, 30, 15, 0]],
+  ['2028-02-29T23:59:59', [2028, 2, 29, 23, 59, 59, 0]],
+  ['2026-10-01T09:30:15Z', '2026-10-01T09:30:15.000Z'],
+  ['2026-10-01T09:30:15z', '2026-10-01T09:30:15.000Z'],
+  ['2026-10-01T09:30:15.250Z', '2026-10-01T09:30:15.250Z'],
+  ['2026-10-01T09:30:15-07:00', '2026-10-01T16:30:15.000Z'],
+  ['2026-10-01T09:30:15-0700', '2026-10-01T16:30:15.000Z'],
+  ['2026-10-01T09:30+05:30', '2026-10-01T04:00:00.000Z'],
+  ['2026-10-01T00:30:00+02:00', '2026-09-30T22:30:00.000Z']
+];
+
+const rejected = [
+  '10/1/2026', '10-01-2026', 'Oct 1 2026', 'October 1, 2026', 'Oct 1', '1 Oct 2026',
+  '2026-10-1', '2026-1-01', '20261001', '2026', '2026-10', '1', '0',
+  '2026-02-30T09:00:00', '2026-13-01T09:00:00', '2026-10-01T24:00:00',
+  '2026-10-01T09:60:00', '2026-10-01T09:30:60', '2026-10-01T09', '2026-10-01T',
+  '2026-10-01Z', '2026-10-01T09:30:15+25:00', '2026-10-01T09:30:15+07:60',
+  'friday', 'next friday', 'next monday', 'noon', 'now', '3d', '+2h', '+3', 'd'
+];
+
+for (const engine of ['node', 'jxa']) {
+  const skip = engine === 'jxa' && process.platform !== 'darwin';
+
+  for (const timezone of Object.keys(zones)) {
+    test(`parseDate accepts ISO timestamps only, ${engine} in ${timezone}`, { skip }, () => {
+      const out = runProbe(engine, timezone, null, `
+        var parts = function (d) {
+          return [d.getFullYear(), d.getMonth() + 1, d.getDate(),
+            d.getHours(), d.getMinutes(), d.getSeconds(), d.getMilliseconds()];
+        };
+        return {
+          accepted: ${JSON.stringify(timestamps.map(t => t[0]))}.map(function (input) {
+            var d = parseDate(input, 'defer');
+            return d ? { local: parts(d), iso: d.toISOString() } : null;
+          }),
+          rejected: ${JSON.stringify(rejected)}.map(function (input) {
+            var d = parseDate(input, 'defer');
+            return d ? d.toString() : null;
+          })
+        };
+      `);
+      timestamps.forEach(([input, expected], i) => {
+        assert.ok(out.accepted[i], `${input} should parse`);
+        if (typeof expected === 'string') assert.equal(out.accepted[i].iso, expected, input);
+        else assert.deepEqual(out.accepted[i].local, expected, input);
+      });
+      rejected.forEach((input, i) => {
+        assert.equal(out.rejected[i], null, `${input} should be rejected`);
+      });
+    });
+  }
+
+  test(`requireDate names the accepted forms, ${engine}`, { skip }, () => {
+    const out = runProbe(engine, 'America/Los_Angeles', null, `
+      try { requireDate('10/1/2026', 'due'); return 'accepted'; }
+      catch (e) { return e.message; }
+    `);
+    assert.match(out, /^Invalid due date: 10\/1\/2026\. /);
+    for (const form of ['today', 'tomorrow', '+3d', 'YYYY-MM-DD', 'YYYY-MM-DDTHH:MM']) {
+      assert.ok(out.includes(form), `message should mention ${form}: ${out}`);
+    }
+  });
 }

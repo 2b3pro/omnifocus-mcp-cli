@@ -30,6 +30,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unparseable `of search` date filter is likewise an error; previously the
   filter was dropped and every task was returned.
 
+- Date flags accept only the documented forms: the keywords, relative
+  offsets, `YYYY-MM-DD`, and ISO timestamps. Other input was handed to the
+  JavaScript engine's own parser, which stored `10/1/2026` at midnight
+  whatever the field and read `Oct 1` as the year 2000. It is now an error
+  that names the accepted forms.
+- `add`, `add project`, `quick`, `project modify`, `qe`, `complete` and
+  `search` exit non-zero when the script reports a failure, as `modify`
+  already did. They previously printed the error and exited 0.
+
 ### Fixed
 
 - A bare date on `--defer` hid the task until 5 p.m. on that day.
